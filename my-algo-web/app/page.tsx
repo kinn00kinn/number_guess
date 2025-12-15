@@ -13,8 +13,10 @@ import {
 
 // --- 設定 ---
 // ローカルならlocalhost, 本番なら自分のドメインに書き換えてください
-const API_URL = "http://localhost:8787";
-const WS_URL = "ws://localhost:8787";
+// const API_URL = "http://localhost:8787";
+// const WS_URL = "ws://localhost:8787";
+const API_URL = "https://my-algo-backend.haruki1009kk.workers.dev";
+const WS_URL = "wss://my-algo-backend.haruki1009kk.workers.dev";
 
 // --- 型定義 ---
 type Card = {

@@ -56,7 +56,7 @@ export default function Home() {
 
   const createRoom = async () => {
     try {
-      const res = await fetch("http://localhost:8787/game/new");
+      const res = await fetch("https://my-algo-backend.haruki1009kk.workers.dev/game/new");
       const id = await res.text();
       addLog(`部屋作成: ${id}`);
       setRoomId(id);
@@ -71,7 +71,7 @@ export default function Home() {
     if (wsRef.current) wsRef.current.close();
     if (pingIntervalRef.current) clearInterval(pingIntervalRef.current);
 
-    const wsUrl = `ws://localhost:8787/game/${id}`;
+    const wsUrl = `wss://my-algo-backend.haruki1009kk.workers.dev/game/${id}`;
     addLog(`接続中: ${wsUrl}`);
 
     const ws = new WebSocket(wsUrl);

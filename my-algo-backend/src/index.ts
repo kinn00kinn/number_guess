@@ -1,4 +1,5 @@
 import { Hono } from 'hono'
+import { cors } from 'hono/cors'
 import { DurableObject } from 'cloudflare:workers'
 
 // --- 1. 型定義 (ゲームのデータ構造) ---
@@ -26,6 +27,12 @@ type Bindings = {
 }
 
 const app = new Hono<{ Bindings: Bindings }>()
+
+app.use('/*', cors({
+  origin: '*', // 本番ではドメインを指定しますが、開発中はこれでOK
+  allowHeaders: ['Content-Type', 'Upgrade'],
+  allowMethods: ['GET', 'POST', 'OPTIONS'],
+}))
 
 // --- 2. ルーティング ---
 app.get('/game/new', async (c) => {

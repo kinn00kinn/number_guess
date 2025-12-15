@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useRef, useEffect, useCallback } from "react";
+import { useState, useRef, useEffect } from "react";
 
 type Card = {
   color: "black" | "white";
@@ -30,7 +30,6 @@ export default function Home() {
   const [gameState, setGameState] = useState<GameState | null>(null);
   const [logs, setLogs] = useState<string[]>([]);
   const [isProcessing, setIsProcessing] = useState(false);
-  // ★追加: 接続状態管理
   const [isConnected, setIsConnected] = useState(false);
 
   const [guessModal, setGuessModal] = useState<{
@@ -44,9 +43,13 @@ export default function Home() {
   const wsRef = useRef<WebSocket | null>(null);
   const pingIntervalRef = useRef<NodeJS.Timeout | null>(null);
 
-  const addLog = (msg: string) => setLogs((prev) => [msg, ...prev].slice(0, 5));
+  const addLog = (msg: string) => {
+    console.log(msg);
+    setLogs((prev) =>
+      [`[${new Date().toLocaleTimeString()}] ${msg}`, ...prev].slice(0, 8)
+    );
+  };
 
-  // クリーンアップ
   useEffect(() => {
     return () => {
       if (pingIntervalRef.current) clearInterval(pingIntervalRef.current);
@@ -56,13 +59,15 @@ export default function Home() {
 
   const createRoom = async () => {
     try {
-      const res = await fetch("https://my-algo-backend.haruki1009kk.workers.dev/game/new");
+      addLog("部屋を作成中...");
+      // ★本番デプロイ時はここを自分のドメイン(https)に変えてください
+      const res = await fetch("http://localhost:8787/game/new");
       const id = await res.text();
-      addLog(`部屋作成: ${id}`);
+      addLog(`部屋ID取得: ${id}`);
       setRoomId(id);
       joinGame(id);
     } catch (e) {
-      addLog("エラー: サーバーに接続できません");
+      addLog("【エラー】バックエンドに接続できません");
     }
   };
 
@@ -71,19 +76,19 @@ export default function Home() {
     if (wsRef.current) wsRef.current.close();
     if (pingIntervalRef.current) clearInterval(pingIntervalRef.current);
 
-    const wsUrl = `wss://my-algo-backend.haruki1009kk.workers.dev/game/${id}`;
-    addLog(`接続中: ${wsUrl}`);
+    // ★本番デプロイ時はここを wss:// に変えてください
+    const wsUrl = `ws://localhost:8787/game/${id}`;
+    addLog(`接続試行: ${wsUrl}`);
 
     const ws = new WebSocket(wsUrl);
     wsRef.current = ws;
 
     ws.onopen = () => {
-      addLog("WebSocket接続成功");
+      addLog("✅ 接続成功");
       setIsConnected(true);
       ws.send(JSON.stringify({ type: "JOIN" }));
       setJoined(true);
 
-      // ★追加: 30秒ごとにPing送信 (切断防止)
       pingIntervalRef.current = setInterval(() => {
         if (ws.readyState === WebSocket.OPEN) {
           ws.send(JSON.stringify({ type: "PING" }));
@@ -97,24 +102,26 @@ export default function Home() {
         setGameState(data);
         setIsProcessing(false);
         if (data.phase === "playing") {
-          setGuessModal({ show: false, targetIndex: -1 });
+          if (data.turnPlayerId !== data.me.id) {
+            setGuessModal({ show: false, targetIndex: -1 });
+          }
         }
       }
       if (data.type === "ERROR") {
-        addLog(`エラー: ${data.message}`);
+        addLog(`❌ エラー: ${data.message}`);
         setIsProcessing(false);
         setJoined(false);
       }
-      // PONGは無視してOK
     };
 
-    ws.onerror = () => {
-      addLog("WebSocketエラー発生");
+    ws.onerror = (e) => {
+      addLog("❌ WebSocketエラー");
       setIsProcessing(false);
       setIsConnected(false);
     };
+
     ws.onclose = () => {
-      addLog("サーバーとの接続が切れました");
+      addLog("⚠️ 切断されました");
       setIsConnected(false);
       setJoined(false);
       setGameState(null);
@@ -124,9 +131,8 @@ export default function Home() {
   };
 
   const handleAttack = (guess: number) => {
-    // 明示的に接続チェック
     if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) {
-      alert("サーバーと接続されていません。再読み込みしてください。");
+      alert("接続されていません");
       return;
     }
     if (isProcessing) return;
@@ -144,7 +150,6 @@ export default function Home() {
   const handleStay = () => {
     if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) return;
     if (isProcessing) return;
-
     setIsProcessing(true);
     wsRef.current.send(JSON.stringify({ type: "STAY" }));
   };
@@ -154,19 +159,18 @@ export default function Home() {
 
   return (
     <main className="min-h-screen bg-slate-900 text-white flex flex-col items-center p-4 select-none font-sans">
-      {/* ★追加: 切断時の警告バナー */}
       {joined && !isConnected && (
         <div className="fixed top-0 left-0 w-full bg-red-600 text-white text-center py-2 z-[100] font-bold animate-pulse">
           ⚠️ サーバーとの接続が切れました。リロードしてください。
         </div>
       )}
 
-      <h1 className="text-3xl font-bold mb-8 text-transparent bg-clip-text bg-gradient-to-r from-cyan-400 to-blue-500 tracking-wider">
+      <h1 className="text-3xl font-bold mb-4 text-transparent bg-clip-text bg-gradient-to-r from-cyan-400 to-blue-500 tracking-wider">
         ALGO ONLINE
       </h1>
 
       {!joined ? (
-        <div className="flex flex-col gap-6 w-full max-w-sm">
+        <div className="flex flex-col gap-6 w-full max-w-sm mt-10">
           <div className="bg-slate-800 p-6 rounded-xl border border-slate-700 shadow-xl">
             <label className="block text-slate-400 text-sm mb-2">Room ID</label>
             <div className="flex gap-2">
@@ -193,11 +197,6 @@ export default function Home() {
               </button>
             </div>
           </div>
-          <div className="text-xs text-slate-500 font-mono">
-            {logs.map((log, i) => (
-              <div key={i}>{log}</div>
-            ))}
-          </div>
         </div>
       ) : (
         <div className="w-full max-w-lg flex flex-col gap-6 relative">
@@ -222,21 +221,42 @@ export default function Home() {
             </div>
           )}
 
-          {/* ヘッダー */}
+          {/* ★修正: ヘッダー (Room IDを表示) */}
           <div
-            className={`text-center p-3 rounded-lg border transition-colors duration-500 ${
+            className={`text-center p-4 rounded-xl border transition-colors duration-500 shadow-lg ${
               isMyTurn
-                ? "border-cyan-500 bg-cyan-950/50"
-                : "border-slate-700 bg-slate-800/50"
+                ? "border-cyan-500 bg-cyan-950/40"
+                : "border-slate-700 bg-slate-800/40"
             }`}
           >
-            <div className="text-lg font-bold flex justify-center items-center gap-2">
+            {/* ステータス */}
+            <div className="text-xl font-bold flex justify-center items-center gap-3 mb-3">
               {isProcessing && (
-                <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
               )}
               {gameState?.phase === "waiting" && "対戦相手を待っています..."}
               {gameState?.phase === "playing" &&
                 (isMyTurn ? "👉 あなたのターン" : "⏳ 相手の考え中...")}
+            </div>
+
+            {/* Room ID エリア */}
+            <div className="flex flex-col items-center justify-center bg-black/20 rounded p-2 border border-white/5">
+              <div className="text-xs text-slate-400 uppercase tracking-widest mb-1">
+                Room ID
+              </div>
+              <button
+                onClick={() => {
+                  navigator.clipboard.writeText(roomId);
+                  alert(`ID: ${roomId} をコピーしました！`);
+                }}
+                className="text-4xl font-mono font-bold tracking-[0.2em] text-cyan-300 hover:text-white hover:scale-110 transition active:scale-95 cursor-pointer"
+                title="クリックしてコピー"
+              >
+                {roomId}
+              </button>
+              <div className="text-xs text-slate-500 mt-2">
+                残り山札: {gameState?.deckCount}
+              </div>
             </div>
           </div>
 
@@ -273,8 +293,8 @@ export default function Home() {
                 <CardView card={gameState.drawnCard} />
               </div>
             ) : (
-              <div className="w-14 h-20 border-2 border-dashed border-slate-700 rounded-lg flex items-center justify-center">
-                <span className="text-slate-700 text-xs">Deck</span>
+              <div className="w-14 h-20 border-2 border-dashed border-slate-700 rounded-lg flex items-center justify-center opacity-50">
+                <span className="text-slate-500 text-xs">Deck</span>
               </div>
             )}
 
@@ -283,7 +303,7 @@ export default function Home() {
                 onClick={handleStay}
                 disabled={isProcessing || !isConnected}
                 className={`
-                   text-white text-sm font-bold py-2 px-6 rounded-full shadow-lg transition
+                   text-white text-sm font-bold py-2 px-8 rounded-full shadow-lg transition
                    ${
                      isProcessing || !isConnected
                        ? "bg-slate-600 cursor-not-allowed"
@@ -310,7 +330,14 @@ export default function Home() {
         </div>
       )}
 
-      {/* 数字推理モーダル */}
+      {/* ログウィンドウ */}
+      <div className="fixed bottom-0 left-0 w-full md:w-80 bg-black/80 text-green-400 text-xs p-2 font-mono max-h-32 overflow-auto border-t border-slate-700 pointer-events-none z-40 opacity-70">
+        {logs.map((log, i) => (
+          <div key={i}>{log}</div>
+        ))}
+      </div>
+
+      {/* 推理モーダル */}
       {guessModal.show && (
         <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-50 animate-in fade-in duration-200">
           <div className="bg-slate-800 p-6 rounded-2xl border border-slate-600 shadow-2xl max-w-sm w-full mx-4">

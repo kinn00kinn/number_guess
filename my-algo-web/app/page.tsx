@@ -4,11 +4,11 @@ import { useState, useRef, useEffect, useCallback } from "react";
 import {
   ArrowRight,
   Copy,
-  Layers,
-  Play,
   LogOut,
   RotateCcw,
-  RefreshCw, // 再接続アイコン用
+  RefreshCw,
+  Zap,
+  Check,
 } from "lucide-react";
 
 // --- 設定 ---
@@ -60,6 +60,9 @@ export default function Home() {
   const timeoutRef = useRef<NodeJS.Timeout | null>(null);
   const shouldReconnectRef = useRef(true);
 
+  // ★追加: コールバック内で最新のstateを参照するためのRef
+  const joinedRef = useRef(false);
+
   // 定義順序の問題を避けるため、useEffectより前に定義
   const cleanupConnection = () => {
     if (pingIntervalRef.current) clearInterval(pingIntervalRef.current);
@@ -69,6 +72,11 @@ export default function Home() {
       wsRef.current = null;
     }
   };
+
+  useEffect(() => {
+    // stateとrefを同期
+    joinedRef.current = joined;
+  }, [joined]);
 
   useEffect(() => {
     return () => {
@@ -105,7 +113,8 @@ export default function Home() {
     }
   }, []);
 
-  // 修正: 再帰呼び出しがあるため関数宣言に変更してTDZを回避
+  // ★修正: constではなくfunctionで定義することで巻き上げ（Hoisting）を有効化し、
+  // 宣言前の呼び出しエラーを回避。再帰呼び出しも可能にする。
   function joinGame(id: string) {
     if (!id) return;
     shouldReconnectRef.current = true;
@@ -165,11 +174,12 @@ export default function Home() {
       stopProcessing();
       if (pingIntervalRef.current) clearInterval(pingIntervalRef.current);
 
-      if (shouldReconnectRef.current && joined) {
+      // ★修正: joinedRef.current を使うことで、古いクロージャの値を参照するバグを防ぐ
+      if (shouldReconnectRef.current && joinedRef.current) {
         console.log("Attempting to reconnect in 3s...");
         setTimeout(() => {
           if (shouldReconnectRef.current) {
-            joinGame(id); // 再帰呼び出しでも関数宣言なのでOK
+            joinGame(id);
           }
         }, 3000);
       } else {
@@ -179,7 +189,6 @@ export default function Home() {
     };
   }
 
-  // ★修正: joinGame の後に定義する
   const createRoom = async () => {
     try {
       const res = await fetch(`${API_URL}/game/new`);
@@ -187,7 +196,6 @@ export default function Home() {
       setRoomId(id);
       joinGame(id);
     } catch (e) {
-      // エラー変数を使用する
       console.error(e);
       alert("サーバーに接続できません");
     }
@@ -225,20 +233,20 @@ export default function Home() {
   const isWinner = gameState?.winner === gameState?.me.id;
 
   return (
-    <div className="min-h-screen bg-gray-50 text-slate-800 font-sans pb-10">
-      {/* 接続切れアラート (再接続中を表示) */}
+    <div className="min-h-screen bg-[#F9FAFB] text-slate-800 font-sans pb-10 selection:bg-slate-200">
+      {/* 接続切れアラート */}
       {joined && !isConnected && (
-        <div className="fixed top-0 left-0 w-full bg-yellow-500 text-white text-center py-2 z-[100] font-bold shadow-md flex items-center justify-center gap-2 animate-pulse">
-          <RefreshCw size={20} className="animate-spin" />
-          接続が切れました。再接続中...
+        <div className="fixed top-0 left-0 w-full bg-slate-800 text-white text-center py-3 z-[100] font-bold shadow-lg flex items-center justify-center gap-2 animate-in slide-in-from-top duration-300">
+          <RefreshCw size={18} className="animate-spin" />
+          <span className="text-sm">再接続しています...</span>
         </div>
       )}
 
       <div className="w-full max-w-md mx-auto">
         {/* ヘッダー */}
-        <header className="sticky top-0 z-50 bg-white/80 backdrop-blur-md border-b border-gray-200 px-4 py-3 flex items-center justify-between shadow-sm">
-          <h1 className="text-xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-cyan-500 to-blue-600">
-            Algo Online
+        <header className="sticky top-0 z-50 bg-[#F9FAFB]/80 backdrop-blur-md px-6 py-4 flex items-center justify-between">
+          <h1 className="text-2xl font-black tracking-tighter text-slate-900">
+            Algo.<span className="text-slate-400">Online</span>
           </h1>
           {joined && (
             <button
@@ -246,25 +254,34 @@ export default function Home() {
                 shouldReconnectRef.current = false;
                 window.location.reload();
               }}
-              className="text-slate-400 hover:text-red-500"
+              className="w-10 h-10 flex items-center justify-center rounded-full bg-white border border-slate-200 text-slate-400 hover:text-slate-900 hover:border-slate-400 transition-all shadow-sm"
             >
-              <LogOut size={20} />
+              <LogOut size={18} />
             </button>
           )}
         </header>
 
         {/* --- ロビー画面 --- */}
         {!joined ? (
-          <main className="p-6 flex flex-col gap-6 mt-6">
-            <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
-              <h2 className="text-lg font-bold text-slate-800 mb-4 flex items-center gap-2">
-                <Play size={20} className="text-cyan-500" />
-                ゲームに参加
+          <main className="px-6 flex flex-col gap-8 mt-10">
+            <div className="space-y-2 text-center">
+              <h2 className="text-3xl font-bold text-slate-900 tracking-tight">
+                Welcome back.
               </h2>
+              <p className="text-slate-500 text-sm">
+                番号を入力してゲームに参加、
+                <br />
+                または新しい部屋を作成してください。
+              </p>
+            </div>
 
-              <div className="flex gap-2 mb-6">
+            <div className="bg-white rounded-3xl shadow-sm border border-slate-100 p-8 space-y-6">
+              <div className="space-y-4">
+                <label className="text-xs font-bold text-slate-400 uppercase tracking-widest pl-1">
+                  Room Number
+                </label>
                 <input
-                  className="flex-1 bg-gray-50 border border-gray-200 px-4 py-3 rounded-xl text-xl text-center tracking-widest focus:outline-none focus:ring-2 focus:ring-cyan-500 transition"
+                  className="w-full bg-slate-50 border-2 border-transparent focus:border-slate-900 focus:bg-white px-4 py-4 rounded-2xl text-3xl font-mono font-bold text-center tracking-[0.2em] outline-none transition-all placeholder:text-slate-200"
                   placeholder="0000"
                   maxLength={4}
                   value={roomId}
@@ -275,105 +292,121 @@ export default function Home() {
 
               <button
                 onClick={() => joinGame(roomId)}
-                className="w-full bg-slate-800 hover:bg-slate-700 text-white font-bold py-4 rounded-xl shadow-lg shadow-slate-200 transition active:scale-95 flex items-center justify-center gap-2"
+                className="group w-full bg-slate-900 text-white font-bold py-4 rounded-2xl shadow-lg shadow-slate-200 hover:shadow-xl hover:bg-black transition-all active:scale-95 flex items-center justify-center gap-2"
               >
-                入室する <ArrowRight size={20} />
+                Join Game
+                <ArrowRight
+                  size={20}
+                  className="group-hover:translate-x-1 transition-transform"
+                />
               </button>
             </div>
 
-            <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6 text-center">
-              <p className="text-slate-500 text-sm mb-4">
-                部屋番号をお持ちでない場合
-              </p>
-              <button
-                onClick={createRoom}
-                className="w-full bg-gradient-to-r from-cyan-500 to-blue-500 text-white font-bold py-3 rounded-xl shadow-lg shadow-cyan-100 transition active:scale-95"
-              >
-                新しい部屋を作成
-              </button>
+            <div className="relative">
+              <div className="absolute inset-0 flex items-center">
+                <div className="w-full border-t border-slate-200"></div>
+              </div>
+              <div className="relative flex justify-center text-sm">
+                <span className="px-4 bg-[#F9FAFB] text-slate-400">or</span>
+              </div>
             </div>
+
+            <button
+              onClick={createRoom}
+              className="w-full bg-white border border-slate-200 text-slate-900 font-bold py-4 rounded-2xl hover:border-slate-400 hover:bg-slate-50 transition-all active:scale-95 shadow-sm"
+            >
+              Create New Room
+            </button>
           </main>
         ) : (
           /* --- ゲーム画面 --- */
-          <main className="p-4 flex flex-col gap-4 relative">
+          <main className="p-4 flex flex-col gap-6 relative">
             {/* 結果モーダル */}
             {gameState?.phase === "finished" && gameState.winner && (
-              <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex flex-col items-center justify-center p-4 animate-in fade-in">
-                <div className="bg-white rounded-3xl p-8 w-full max-w-sm text-center shadow-2xl">
-                  <h2
-                    className={`text-4xl font-black mb-2 ${
-                      isWinner ? "text-yellow-500" : "text-slate-400"
-                    }`}
-                  >
-                    {isWinner ? "WIN!" : "LOSE..."}
-                  </h2>
-                  <p className="text-slate-500 mb-8">
-                    {isWinner ? "おめでとうございます！" : "残念、次こそは..."}
-                  </p>
+              <div className="fixed inset-0 z-[60] bg-slate-900/40 backdrop-blur-sm flex items-center justify-center p-6 animate-in fade-in duration-500">
+                <div className="bg-white rounded-[2rem] p-10 w-full max-w-sm text-center shadow-2xl space-y-6 animate-in slide-in-from-bottom-10 zoom-in-95 duration-500">
+                  <div className="space-y-2">
+                    <h2 className="text-5xl font-black tracking-tighter text-slate-900">
+                      {isWinner ? "WIN!" : "LOSE"}
+                    </h2>
+                    <p className="text-slate-500 font-medium">
+                      {isWinner
+                        ? "Congratulations!"
+                        : "Don't give up, try again."}
+                    </p>
+                  </div>
                   <button
                     onClick={() => window.location.reload()}
-                    className="w-full bg-slate-900 text-white font-bold py-4 rounded-xl hover:scale-105 transition flex items-center justify-center gap-2"
+                    className="w-full bg-slate-900 text-white font-bold py-4 rounded-2xl hover:bg-black hover:scale-105 transition-all shadow-lg active:scale-95 flex items-center justify-center gap-2"
                   >
-                    <RotateCcw size={20} /> もう一度遊ぶ
+                    <RotateCcw size={18} />
+                    Replay
                   </button>
                 </div>
               </div>
             )}
 
-            {/* ステータスカード */}
-            <div
-              className={`bg-white rounded-2xl p-4 shadow-sm border transition-all duration-300 ${
-                isMyTurn
-                  ? "border-cyan-400 ring-2 ring-cyan-100"
-                  : "border-gray-100"
-              }`}
-            >
-              <div className="flex justify-between items-start mb-2">
-                <div>
-                  <div className="text-xs text-slate-400 font-bold tracking-wider mb-1">
-                    STATUS
-                  </div>
-                  <div className="text-lg font-bold flex items-center gap-2 text-slate-800">
-                    {isProcessing && (
-                      <div className="w-4 h-4 border-2 border-slate-300 border-t-cyan-500 rounded-full animate-spin"></div>
-                    )}
-                    {gameState?.phase === "waiting" && "待機中..."}
-                    {gameState?.phase === "playing" &&
-                      (isMyTurn ? "あなたの番" : "相手の番")}
-                  </div>
-                </div>
-                <button
-                  onClick={copyRoomId}
-                  className="flex flex-col items-end group"
-                >
-                  <div className="text-xs text-slate-400 font-bold tracking-wider mb-1 flex items-center gap-1">
-                    ROOM ID{" "}
-                    {showCopyAlert && (
-                      <span className="text-green-500 text-[10px] animate-pulse">
-                        COPIED!
-                      </span>
-                    )}
-                  </div>
-                  <div className="flex items-center gap-1 bg-slate-100 px-2 py-1 rounded-lg group-active:bg-slate-200 transition">
-                    <span className="font-mono font-bold text-slate-700">
-                      {roomId}
-                    </span>
-                    <Copy size={14} className="text-slate-400" />
-                  </div>
-                </button>
-              </div>
-              <div className="h-1 w-full bg-gray-100 rounded-full overflow-hidden">
+            {/* ステータスバー */}
+            <div className="bg-white rounded-[2rem] p-1 shadow-sm border border-slate-100 flex items-center justify-between relative overflow-hidden">
+              <div
+                className={`absolute top-0 left-0 h-1 bg-slate-900 transition-all duration-500 ease-out ${
+                  isMyTurn ? "w-full" : "w-0"
+                }`}
+              ></div>
+
+              <div className="flex items-center gap-4 px-4 py-3">
                 <div
-                  className={`h-full bg-cyan-500 transition-all duration-1000 ${
-                    isMyTurn ? "w-full" : "w-0"
+                  className={`w-10 h-10 rounded-full flex items-center justify-center transition-colors ${
+                    isMyTurn
+                      ? "bg-slate-900 text-white"
+                      : "bg-slate-100 text-slate-400"
                   }`}
-                ></div>
+                >
+                  {isProcessing ? (
+                    <RefreshCw size={18} className="animate-spin" />
+                  ) : (
+                    <Zap size={18} fill={isMyTurn ? "currentColor" : "none"} />
+                  )}
+                </div>
+                <div className="flex flex-col">
+                  <span className="text-[10px] font-bold text-slate-400 tracking-widest uppercase">
+                    Status
+                  </span>
+                  <span className="text-sm font-bold text-slate-900">
+                    {gameState?.phase === "waiting"
+                      ? "Waiting..."
+                      : isMyTurn
+                      ? "Your Turn"
+                      : "Opponent's Turn"}
+                  </span>
+                </div>
               </div>
+
+              <button
+                onClick={copyRoomId}
+                className="mr-2 px-4 py-2 bg-slate-50 hover:bg-slate-100 rounded-xl flex flex-col items-end transition-colors active:scale-95 group"
+              >
+                <span className="text-[10px] font-bold text-slate-400 tracking-widest uppercase flex items-center gap-1">
+                  Room ID
+                  {showCopyAlert && (
+                    <Check size={10} className="text-green-500" />
+                  )}
+                </span>
+                <div className="flex items-center gap-2">
+                  <span className="font-mono font-bold text-slate-900 tracking-widest">
+                    {roomId}
+                  </span>
+                  <Copy
+                    size={12}
+                    className="text-slate-300 group-hover:text-slate-500"
+                  />
+                </div>
+              </button>
             </div>
 
             {/* 相手の手札 */}
-            <div className="flex justify-center min-h-[90px] py-2">
-              <div className="flex gap-2 flex-wrap justify-center">
+            <div className="flex justify-center min-h-[100px] py-4">
+              <div className="flex gap-2 sm:gap-3 flex-wrap justify-center">
                 {gameState?.opponentHand.map((card, i) => (
                   <CardView
                     key={i}
@@ -394,58 +427,54 @@ export default function Home() {
               </div>
             </div>
 
-            {/* プレイエリア (デッキ & ドロー) */}
-            <div className="bg-slate-900/5 rounded-2xl py-6 flex flex-col items-center justify-center gap-4 border border-dashed border-slate-200">
-              <div className="flex items-center gap-8">
-                {/* デッキ */}
-                <div className="flex flex-col items-center gap-1">
-                  <div className="w-14 h-20 bg-slate-200 rounded-lg border-2 border-white shadow-sm flex items-center justify-center">
-                    <Layers size={20} className="text-slate-400" />
-                  </div>
-                  <span className="text-[10px] text-slate-400 font-bold">
-                    {gameState?.deckCount}
-                  </span>
-                </div>
+            {/* プレイエリア */}
+            <div className="relative py-8 flex items-center justify-center">
+              <div className="absolute inset-x-8 h-[1px] bg-slate-200"></div>
 
-                {/* ドローカード */}
-                {gameState?.drawnCard && (
-                  <div className="flex flex-col items-center gap-1 animate-in zoom-in duration-300">
-                    <CardView card={gameState.drawnCard} />
-                    <span className="text-[10px] text-cyan-600 font-bold">
-                      DRAW
+              <div className="relative z-10 flex items-center gap-8 bg-[#F9FAFB] px-6">
+                {/* デッキ数表示 (Layersアイコン廃止) */}
+                <div className="flex flex-col items-center gap-2">
+                  <div className="w-14 h-20 bg-slate-200 rounded-xl border-2 border-white shadow-inner flex items-center justify-center">
+                    <span className="font-mono font-bold text-slate-400">
+                      {gameState?.deckCount}
                     </span>
                   </div>
-                )}
-              </div>
+                </div>
 
-              {isMyTurn && gameState?.drawnCard && (
-                <button
-                  onClick={handleStay}
-                  disabled={isProcessing || !isConnected}
-                  className={`
-                     px-6 py-2 rounded-full font-bold text-sm shadow-lg transition transform active:scale-95
-                     ${
-                       isProcessing
-                         ? "bg-gray-300 text-white cursor-not-allowed"
-                         : "bg-red-500 text-white hover:bg-red-600"
-                     }
-                   `}
-                >
-                  このまま終了 (Stay)
-                </button>
-              )}
+                {/* ドローカード or Stayボタン */}
+                <div className="h-24 flex items-center justify-center min-w-[80px]">
+                  {gameState?.drawnCard ? (
+                    <div className="flex flex-col items-center gap-2 animate-in zoom-in duration-300">
+                      <CardView card={gameState.drawnCard} />
+                      {isMyTurn && (
+                        <button
+                          onClick={handleStay}
+                          disabled={isProcessing || !isConnected}
+                          className="absolute -bottom-12 bg-slate-900 text-white text-xs font-bold px-4 py-2 rounded-full shadow-lg hover:bg-black transition-transform active:scale-95 whitespace-nowrap"
+                        >
+                          Stay (Pass)
+                        </button>
+                      )}
+                    </div>
+                  ) : (
+                    <div className="text-xs font-bold text-slate-300 tracking-widest uppercase">
+                      Field
+                    </div>
+                  )}
+                </div>
+              </div>
             </div>
 
             {/* 自分の手札 */}
-            <div className="flex flex-col items-center pb-8">
-              <div className="flex gap-2 flex-wrap justify-center">
+            <div className="flex flex-col items-center gap-4">
+              <div className="flex gap-2 sm:gap-3 flex-wrap justify-center">
                 {gameState?.me.hand.map((card, i) => (
                   <CardView key={i} card={card} />
                 ))}
               </div>
-              <p className="text-xs text-slate-400 mt-3 font-bold tracking-widest">
+              <span className="text-[10px] font-bold text-slate-300 tracking-[0.2em]">
                 YOUR HAND
-              </p>
+              </span>
             </div>
           </main>
         )}
@@ -453,41 +482,54 @@ export default function Home() {
 
       {/* 推理モーダル */}
       {guessModal.show && (
-        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-end sm:items-center justify-center animate-in fade-in duration-200">
-          <div className="bg-white w-full max-w-sm rounded-t-3xl sm:rounded-3xl p-6 pb-10 sm:pb-6 shadow-2xl animate-in slide-in-from-bottom duration-300">
-            <h3 className="text-lg font-bold mb-6 text-center text-slate-800">
-              数字を推理してください
-            </h3>
+        <>
+          <div
+            className="fixed inset-0 z-40 bg-slate-900/20 backdrop-blur-[2px] animate-in fade-in"
+            onClick={() => setGuessModal({ show: false, targetIndex: -1 })}
+          ></div>
+          <div className="fixed inset-x-0 bottom-0 z-50 p-4 animate-in slide-in-from-bottom duration-300">
+            <div className="bg-white rounded-[2rem] shadow-2xl p-6 pb-8 w-full max-w-md mx-auto space-y-6">
+              <div className="w-12 h-1 bg-slate-100 rounded-full mx-auto"></div>
 
-            <div className="grid grid-cols-4 gap-3 mb-6">
-              {[...Array(12)].map((_, num) => (
-                <button
-                  key={num}
-                  onClick={() => handleAttack(num)}
-                  disabled={isProcessing || !isConnected}
-                  className={`
-                    py-4 rounded-xl text-xl font-bold transition active:scale-95 shadow-sm border
-                    ${
-                      isProcessing
-                        ? "bg-gray-100 text-gray-300"
-                        : "bg-white border-gray-200 text-slate-700 hover:border-cyan-500 hover:text-cyan-600 hover:bg-cyan-50"
-                    }
-                  `}
-                >
-                  {num}
-                </button>
-              ))}
+              <div className="text-center">
+                <h3 className="text-xl font-bold text-slate-900">
+                  Guess Number
+                </h3>
+                <p className="text-slate-400 text-xs mt-1">
+                  相手のカードの数字を推理してください
+                </p>
+              </div>
+
+              <div className="grid grid-cols-4 gap-3">
+                {[...Array(12)].map((_, num) => (
+                  <button
+                    key={num}
+                    onClick={() => handleAttack(num)}
+                    disabled={isProcessing || !isConnected}
+                    className={`
+                      aspect-square rounded-2xl text-xl font-bold transition-all active:scale-90 flex items-center justify-center
+                      ${
+                        isProcessing
+                          ? "bg-slate-50 text-slate-300"
+                          : "bg-slate-50 text-slate-900 border border-slate-100 hover:bg-slate-900 hover:text-white hover:shadow-lg"
+                      }
+                    `}
+                  >
+                    {num}
+                  </button>
+                ))}
+              </div>
+
+              <button
+                onClick={() => setGuessModal({ show: false, targetIndex: -1 })}
+                disabled={isProcessing}
+                className="w-full py-4 bg-transparent text-slate-400 font-bold hover:text-slate-600 transition"
+              >
+                Cancel
+              </button>
             </div>
-
-            <button
-              onClick={() => setGuessModal({ show: false, targetIndex: -1 })}
-              disabled={isProcessing}
-              className="w-full py-4 bg-gray-100 text-slate-500 font-bold rounded-xl hover:bg-gray-200 transition"
-            >
-              キャンセル
-            </button>
           </div>
-        </div>
+        </>
       )}
     </div>
   );
@@ -509,34 +551,44 @@ function CardView({
     <div
       onClick={onClick}
       className={`
-        relative w-14 h-20 md:w-16 md:h-24 rounded-lg flex items-center justify-center text-2xl font-black shadow-md border-[3px] select-none
-        transition-all transform duration-300
+        relative w-14 h-20 md:w-16 md:h-24 rounded-2xl flex items-center justify-center text-2xl font-black select-none
+        transition-all duration-300
         ${
           isBlack
-            ? "bg-slate-800 text-white border-slate-600 shadow-slate-200"
-            : "bg-white text-slate-800 border-gray-200 shadow-gray-100"
+            ? "bg-slate-800 text-white shadow-lg shadow-slate-200"
+            : "bg-white text-slate-900 border-2 border-slate-100 shadow-sm"
         }
-        ${card.isOpen ? "opacity-100 ring-2 ring-offset-2 ring-green-400" : ""} 
         ${
           !card.isOpen && isOpponent
-            ? "cursor-pointer hover:-translate-y-1 hover:border-cyan-400 hover:shadow-cyan-100"
+            ? "cursor-pointer hover:-translate-y-2 hover:shadow-xl active:scale-95"
             : ""
         }
+        ${card.isOpen ? "ring-2 ring-slate-200 ring-offset-2" : ""}
       `}
     >
+      {/* 数字 */}
       {content}
 
+      {/* 相手の伏せカードの柄 */}
       {isOpponent && !card.isOpen && (
-        <div
-          className={`w-3 h-3 rounded-full ${
-            isBlack ? "bg-slate-700" : "bg-gray-200"
-          }`}
-        ></div>
+        <div className="flex gap-1">
+          <div
+            className={`w-1.5 h-1.5 rounded-full ${
+              isBlack ? "bg-slate-700" : "bg-slate-100"
+            }`}
+          ></div>
+          <div
+            className={`w-1.5 h-1.5 rounded-full ${
+              isBlack ? "bg-slate-700" : "bg-slate-100"
+            }`}
+          ></div>
+        </div>
       )}
 
+      {/* オープン済みマーカー */}
       {card.isOpen && isOpponent && (
-        <div className="absolute -top-2 -right-2 w-5 h-5 bg-green-500 text-white flex items-center justify-center rounded-full text-[10px] shadow-sm animate-in zoom-in border-2 border-white">
-          ✓
+        <div className="absolute -top-2 -right-2 w-6 h-6 bg-slate-900 text-white flex items-center justify-center rounded-full shadow-md animate-in zoom-in border-2 border-white">
+          <Check size={12} strokeWidth={4} />
         </div>
       )}
     </div>

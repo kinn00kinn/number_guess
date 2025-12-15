@@ -1,7 +1,22 @@
 "use client";
 
 import { useState, useRef, useEffect } from "react";
+import {
+  ArrowRight,
+  Copy,
+  Layers,
+  AlertCircle,
+  Play,
+  LogOut,
+  RotateCcw,
+} from "lucide-react";
 
+// --- 設定 ---
+// ローカルならlocalhost, 本番なら自分のドメインに書き換えてください
+const API_URL = "http://localhost:8787";
+const WS_URL = "ws://localhost:8787";
+
+// --- 型定義 ---
 type Card = {
   color: "black" | "white";
   number: number | null;
@@ -28,9 +43,9 @@ export default function Home() {
   const [roomId, setRoomId] = useState("");
   const [joined, setJoined] = useState(false);
   const [gameState, setGameState] = useState<GameState | null>(null);
-  const [logs, setLogs] = useState<string[]>([]);
   const [isProcessing, setIsProcessing] = useState(false);
   const [isConnected, setIsConnected] = useState(false);
+  const [showCopyAlert, setShowCopyAlert] = useState(false);
 
   const [guessModal, setGuessModal] = useState<{
     show: boolean;
@@ -42,32 +57,40 @@ export default function Home() {
 
   const wsRef = useRef<WebSocket | null>(null);
   const pingIntervalRef = useRef<NodeJS.Timeout | null>(null);
-
-  const addLog = (msg: string) => {
-    console.log(msg);
-    setLogs((prev) =>
-      [`[${new Date().toLocaleTimeString()}] ${msg}`, ...prev].slice(0, 8)
-    );
-  };
+  // ★安全装置: タイムアウト用タイマー
+  const timeoutRef = useRef<NodeJS.Timeout | null>(null);
 
   useEffect(() => {
     return () => {
       if (pingIntervalRef.current) clearInterval(pingIntervalRef.current);
+      if (timeoutRef.current) clearTimeout(timeoutRef.current);
       if (wsRef.current) wsRef.current.close();
     };
   }, []);
 
+  // ★ロック解除の安全装置
+  const startProcessing = () => {
+    setIsProcessing(true);
+    // 3秒経っても応答がなければ強制解除
+    if (timeoutRef.current) clearTimeout(timeoutRef.current);
+    timeoutRef.current = setTimeout(() => {
+      setIsProcessing(false);
+    }, 3000);
+  };
+
+  const stopProcessing = () => {
+    setIsProcessing(false);
+    if (timeoutRef.current) clearTimeout(timeoutRef.current);
+  };
+
   const createRoom = async () => {
     try {
-      addLog("部屋を作成中...");
-      // ★本番デプロイ時はここを自分のドメイン(https)に変えてください
-      const res = await fetch("http://localhost:8787/game/new");
+      const res = await fetch(`${API_URL}/game/new`);
       const id = await res.text();
-      addLog(`部屋ID取得: ${id}`);
       setRoomId(id);
       joinGame(id);
     } catch (e) {
-      addLog("【エラー】バックエンドに接続できません");
+      alert("サーバーに接続できません");
     }
   };
 
@@ -76,15 +99,10 @@ export default function Home() {
     if (wsRef.current) wsRef.current.close();
     if (pingIntervalRef.current) clearInterval(pingIntervalRef.current);
 
-    // ★本番デプロイ時はここを wss:// に変えてください
-    const wsUrl = `ws://localhost:8787/game/${id}`;
-    addLog(`接続試行: ${wsUrl}`);
-
-    const ws = new WebSocket(wsUrl);
+    const ws = new WebSocket(`${WS_URL}/game/${id}`);
     wsRef.current = ws;
 
     ws.onopen = () => {
-      addLog("✅ 接続成功");
       setIsConnected(true);
       ws.send(JSON.stringify({ type: "JOIN" }));
       setJoined(true);
@@ -100,7 +118,8 @@ export default function Home() {
       const data = JSON.parse(event.data);
       if (data.type === "UPDATE_STATE") {
         setGameState(data);
-        setIsProcessing(false);
+        stopProcessing(); // ★受信したらロック解除
+
         if (data.phase === "playing") {
           if (data.turnPlayerId !== data.me.id) {
             setGuessModal({ show: false, targetIndex: -1 });
@@ -108,36 +127,31 @@ export default function Home() {
         }
       }
       if (data.type === "ERROR") {
-        addLog(`❌ エラー: ${data.message}`);
-        setIsProcessing(false);
+        alert(data.message);
+        stopProcessing();
         setJoined(false);
       }
     };
 
-    ws.onerror = (e) => {
-      addLog("❌ WebSocketエラー");
-      setIsProcessing(false);
+    ws.onerror = () => {
+      stopProcessing();
       setIsConnected(false);
     };
 
     ws.onclose = () => {
-      addLog("⚠️ 切断されました");
       setIsConnected(false);
       setJoined(false);
       setGameState(null);
-      setIsProcessing(false);
+      stopProcessing();
       if (pingIntervalRef.current) clearInterval(pingIntervalRef.current);
     };
   };
 
   const handleAttack = (guess: number) => {
-    if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) {
-      alert("接続されていません");
-      return;
-    }
+    if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) return;
     if (isProcessing) return;
 
-    setIsProcessing(true);
+    startProcessing(); // ★タイムアウト付きロック開始
     wsRef.current.send(
       JSON.stringify({
         type: "ATTACK",
@@ -150,200 +164,251 @@ export default function Home() {
   const handleStay = () => {
     if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) return;
     if (isProcessing) return;
-    setIsProcessing(true);
+
+    startProcessing(); // ★タイムアウト付きロック開始
     wsRef.current.send(JSON.stringify({ type: "STAY" }));
+  };
+
+  const copyRoomId = () => {
+    navigator.clipboard.writeText(roomId);
+    setShowCopyAlert(true);
+    setTimeout(() => setShowCopyAlert(false), 2000);
   };
 
   const isMyTurn = gameState?.turnPlayerId === gameState?.me.id;
   const isWinner = gameState?.winner === gameState?.me.id;
 
   return (
-    <main className="min-h-screen bg-slate-900 text-white flex flex-col items-center p-4 select-none font-sans">
+    <div className="min-h-screen bg-gray-50 text-slate-800 font-sans pb-10">
       {joined && !isConnected && (
-        <div className="fixed top-0 left-0 w-full bg-red-600 text-white text-center py-2 z-[100] font-bold animate-pulse">
-          ⚠️ サーバーとの接続が切れました。リロードしてください。
+        <div className="fixed top-0 left-0 w-full bg-red-500 text-white text-center py-2 z-[100] font-bold shadow-md flex items-center justify-center gap-2">
+          <AlertCircle size={20} />
+          サーバー接続切れ。リロードしてください。
         </div>
       )}
 
-      <h1 className="text-3xl font-bold mb-4 text-transparent bg-clip-text bg-gradient-to-r from-cyan-400 to-blue-500 tracking-wider">
-        ALGO ONLINE
-      </h1>
+      <div className="w-full max-w-md mx-auto">
+        {/* ヘッダー */}
+        <header className="sticky top-0 z-50 bg-white/80 backdrop-blur-md border-b border-gray-200 px-4 py-3 flex items-center justify-between shadow-sm">
+          <h1 className="text-xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-cyan-500 to-blue-600">
+            Algo Online
+          </h1>
+          {joined && (
+            <button
+              onClick={() => window.location.reload()}
+              className="text-slate-400 hover:text-red-500"
+            >
+              <LogOut size={20} />
+            </button>
+          )}
+        </header>
 
-      {!joined ? (
-        <div className="flex flex-col gap-6 w-full max-w-sm mt-10">
-          <div className="bg-slate-800 p-6 rounded-xl border border-slate-700 shadow-xl">
-            <label className="block text-slate-400 text-sm mb-2">Room ID</label>
-            <div className="flex gap-2">
-              <input
-                className="flex-1 bg-slate-900 border border-slate-600 px-4 py-3 rounded text-xl text-center tracking-widest focus:outline-none focus:border-cyan-400 transition"
-                placeholder="0000"
-                maxLength={4}
-                value={roomId}
-                onChange={(e) => setRoomId(e.target.value)}
-              />
+        {/* --- ロビー画面 --- */}
+        {!joined ? (
+          <main className="p-6 flex flex-col gap-6 mt-6">
+            <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
+              <h2 className="text-lg font-bold text-slate-800 mb-4 flex items-center gap-2">
+                <Play size={20} className="text-cyan-500" />
+                ゲームに参加
+              </h2>
+
+              <div className="flex gap-2 mb-6">
+                <input
+                  className="flex-1 bg-gray-50 border border-gray-200 px-4 py-3 rounded-xl text-xl text-center tracking-widest focus:outline-none focus:ring-2 focus:ring-cyan-500 transition"
+                  placeholder="0000"
+                  maxLength={4}
+                  value={roomId}
+                  onChange={(e) => setRoomId(e.target.value)}
+                  type="tel"
+                />
+              </div>
+
               <button
                 onClick={() => joinGame(roomId)}
-                className="bg-cyan-600 hover:bg-cyan-500 text-white font-bold px-6 rounded transition shadow-lg shadow-cyan-900/50"
+                className="w-full bg-slate-800 hover:bg-slate-700 text-white font-bold py-4 rounded-xl shadow-lg shadow-slate-200 transition active:scale-95 flex items-center justify-center gap-2"
               >
-                入室
+                入室する <ArrowRight size={20} />
               </button>
             </div>
-            <div className="mt-6 border-t border-slate-700 pt-6 text-center">
+
+            <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6 text-center">
+              <p className="text-slate-500 text-sm mb-4">
+                部屋番号をお持ちでない場合
+              </p>
               <button
                 onClick={createRoom}
-                className="text-sm text-cyan-400 hover:text-cyan-300 underline underline-offset-4"
+                className="w-full bg-gradient-to-r from-cyan-500 to-blue-500 text-white font-bold py-3 rounded-xl shadow-lg shadow-cyan-100 transition active:scale-95"
               >
-                新しい部屋を作成する
+                新しい部屋を作成
               </button>
             </div>
-          </div>
-        </div>
-      ) : (
-        <div className="w-full max-w-lg flex flex-col gap-6 relative">
-          {/* 結果画面 */}
-          {gameState?.phase === "finished" && gameState.winner && (
-            <div className="absolute inset-0 z-50 bg-slate-900/90 flex flex-col items-center justify-center rounded-lg backdrop-blur-sm animate-in fade-in">
-              <h2
-                className={`text-6xl font-black mb-4 ${
-                  isWinner
-                    ? "text-yellow-400 drop-shadow-glow"
-                    : "text-blue-500"
-                }`}
-              >
-                {isWinner ? "YOU WIN!" : "YOU LOSE"}
-              </h2>
-              <button
-                onClick={() => window.location.reload()}
-                className="bg-white text-slate-900 font-bold py-3 px-8 rounded-full hover:scale-105 transition"
-              >
-                もう一度遊ぶ
-              </button>
-            </div>
-          )}
+          </main>
+        ) : (
+          /* --- ゲーム画面 --- */
+          <main className="p-4 flex flex-col gap-4 relative">
+            {/* 結果モーダル */}
+            {gameState?.phase === "finished" && gameState.winner && (
+              <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex flex-col items-center justify-center p-4 animate-in fade-in">
+                <div className="bg-white rounded-3xl p-8 w-full max-w-sm text-center shadow-2xl">
+                  <h2
+                    className={`text-4xl font-black mb-2 ${
+                      isWinner ? "text-yellow-500" : "text-slate-400"
+                    }`}
+                  >
+                    {isWinner ? "WIN!" : "LOSE..."}
+                  </h2>
+                  <p className="text-slate-500 mb-8">
+                    {isWinner ? "おめでとうございます！" : "残念、次こそは..."}
+                  </p>
+                  <button
+                    onClick={() => window.location.reload()}
+                    className="w-full bg-slate-900 text-white font-bold py-4 rounded-xl hover:scale-105 transition flex items-center justify-center gap-2"
+                  >
+                    <RotateCcw size={20} /> もう一度遊ぶ
+                  </button>
+                </div>
+              </div>
+            )}
 
-          {/* ★修正: ヘッダー (Room IDを表示) */}
-          <div
-            className={`text-center p-4 rounded-xl border transition-colors duration-500 shadow-lg ${
-              isMyTurn
-                ? "border-cyan-500 bg-cyan-950/40"
-                : "border-slate-700 bg-slate-800/40"
-            }`}
-          >
-            {/* ステータス */}
-            <div className="text-xl font-bold flex justify-center items-center gap-3 mb-3">
-              {isProcessing && (
-                <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+            {/* ステータスカード */}
+            <div
+              className={`bg-white rounded-2xl p-4 shadow-sm border transition-all duration-300 ${
+                isMyTurn
+                  ? "border-cyan-400 ring-2 ring-cyan-100"
+                  : "border-gray-100"
+              }`}
+            >
+              <div className="flex justify-between items-start mb-2">
+                <div>
+                  <div className="text-xs text-slate-400 font-bold tracking-wider mb-1">
+                    STATUS
+                  </div>
+                  <div className="text-lg font-bold flex items-center gap-2 text-slate-800">
+                    {isProcessing && (
+                      <div className="w-4 h-4 border-2 border-slate-300 border-t-cyan-500 rounded-full animate-spin"></div>
+                    )}
+                    {gameState?.phase === "waiting" && "待機中..."}
+                    {gameState?.phase === "playing" &&
+                      (isMyTurn ? "あなたの番" : "相手の番")}
+                  </div>
+                </div>
+                <button
+                  onClick={copyRoomId}
+                  className="flex flex-col items-end group"
+                >
+                  <div className="text-xs text-slate-400 font-bold tracking-wider mb-1 flex items-center gap-1">
+                    ROOM ID{" "}
+                    {showCopyAlert && (
+                      <span className="text-green-500 text-[10px] animate-pulse">
+                        COPIED!
+                      </span>
+                    )}
+                  </div>
+                  <div className="flex items-center gap-1 bg-slate-100 px-2 py-1 rounded-lg group-active:bg-slate-200 transition">
+                    <span className="font-mono font-bold text-slate-700">
+                      {roomId}
+                    </span>
+                    <Copy size={14} className="text-slate-400" />
+                  </div>
+                </button>
+              </div>
+              <div className="h-1 w-full bg-gray-100 rounded-full overflow-hidden">
+                <div
+                  className={`h-full bg-cyan-500 transition-all duration-1000 ${
+                    isMyTurn ? "w-full" : "w-0"
+                  }`}
+                ></div>
+              </div>
+            </div>
+
+            {/* 相手の手札 */}
+            <div className="flex justify-center min-h-[90px] py-2">
+              <div className="flex gap-2 flex-wrap justify-center">
+                {gameState?.opponentHand.map((card, i) => (
+                  <CardView
+                    key={i}
+                    card={card}
+                    isOpponent
+                    onClick={() => {
+                      if (
+                        isMyTurn &&
+                        !card.isOpen &&
+                        !isProcessing &&
+                        isConnected
+                      ) {
+                        setGuessModal({ show: true, targetIndex: i });
+                      }
+                    }}
+                  />
+                ))}
+              </div>
+            </div>
+
+            {/* プレイエリア (デッキ & ドロー) */}
+            <div className="bg-slate-900/5 rounded-2xl py-6 flex flex-col items-center justify-center gap-4 border border-dashed border-slate-200">
+              <div className="flex items-center gap-8">
+                {/* デッキ */}
+                <div className="flex flex-col items-center gap-1">
+                  <div className="w-14 h-20 bg-slate-200 rounded-lg border-2 border-white shadow-sm flex items-center justify-center">
+                    <Layers size={20} className="text-slate-400" />
+                  </div>
+                  <span className="text-[10px] text-slate-400 font-bold">
+                    {gameState?.deckCount}
+                  </span>
+                </div>
+
+                {/* ドローカード */}
+                {gameState?.drawnCard && (
+                  <div className="flex flex-col items-center gap-1 animate-in zoom-in duration-300">
+                    <CardView card={gameState.drawnCard} />
+                    <span className="text-[10px] text-cyan-600 font-bold">
+                      DRAW
+                    </span>
+                  </div>
+                )}
+              </div>
+
+              {isMyTurn && gameState?.drawnCard && (
+                <button
+                  onClick={handleStay}
+                  disabled={isProcessing || !isConnected}
+                  className={`
+                     px-6 py-2 rounded-full font-bold text-sm shadow-lg transition transform active:scale-95
+                     ${
+                       isProcessing
+                         ? "bg-gray-300 text-white cursor-not-allowed"
+                         : "bg-red-500 text-white hover:bg-red-600"
+                     }
+                   `}
+                >
+                  このまま終了 (Stay)
+                </button>
               )}
-              {gameState?.phase === "waiting" && "対戦相手を待っています..."}
-              {gameState?.phase === "playing" &&
-                (isMyTurn ? "👉 あなたのターン" : "⏳ 相手の考え中...")}
             </div>
 
-            {/* Room ID エリア */}
-            <div className="flex flex-col items-center justify-center bg-black/20 rounded p-2 border border-white/5">
-              <div className="text-xs text-slate-400 uppercase tracking-widest mb-1">
-                Room ID
+            {/* 自分の手札 */}
+            <div className="flex flex-col items-center pb-8">
+              <div className="flex gap-2 flex-wrap justify-center">
+                {gameState?.me.hand.map((card, i) => (
+                  <CardView key={i} card={card} />
+                ))}
               </div>
-              <button
-                onClick={() => {
-                  navigator.clipboard.writeText(roomId);
-                  alert(`ID: ${roomId} をコピーしました！`);
-                }}
-                className="text-4xl font-mono font-bold tracking-[0.2em] text-cyan-300 hover:text-white hover:scale-110 transition active:scale-95 cursor-pointer"
-                title="クリックしてコピー"
-              >
-                {roomId}
-              </button>
-              <div className="text-xs text-slate-500 mt-2">
-                残り山札: {gameState?.deckCount}
-              </div>
+              <p className="text-xs text-slate-400 mt-3 font-bold tracking-widest">
+                YOUR HAND
+              </p>
             </div>
-          </div>
-
-          {/* 相手の手札 */}
-          <div className="flex flex-col items-center min-h-[100px]">
-            <div className="flex gap-2 flex-wrap justify-center">
-              {gameState?.opponentHand.map((card, i) => (
-                <CardView
-                  key={i}
-                  card={card}
-                  isOpponent
-                  onClick={() => {
-                    if (
-                      isMyTurn &&
-                      !card.isOpen &&
-                      !isProcessing &&
-                      isConnected
-                    ) {
-                      setGuessModal({ show: true, targetIndex: i });
-                    }
-                  }}
-                />
-              ))}
-            </div>
-          </div>
-
-          {/* プレイエリア */}
-          <div className="h-40 flex flex-col items-center justify-center gap-4 border-y border-slate-800 bg-slate-900/30 py-4">
-            {gameState?.drawnCard ? (
-              <div className="flex flex-col items-center animate-bounce-short">
-                <span className="text-xs text-cyan-400 mb-1 font-bold">
-                  DRAW
-                </span>
-                <CardView card={gameState.drawnCard} />
-              </div>
-            ) : (
-              <div className="w-14 h-20 border-2 border-dashed border-slate-700 rounded-lg flex items-center justify-center opacity-50">
-                <span className="text-slate-500 text-xs">Deck</span>
-              </div>
-            )}
-
-            {isMyTurn && gameState?.drawnCard && (
-              <button
-                onClick={handleStay}
-                disabled={isProcessing || !isConnected}
-                className={`
-                   text-white text-sm font-bold py-2 px-8 rounded-full shadow-lg transition
-                   ${
-                     isProcessing || !isConnected
-                       ? "bg-slate-600 cursor-not-allowed"
-                       : "bg-red-600 hover:bg-red-500 hover:scale-105"
-                   }
-                 `}
-              >
-                このまま終了 (Stay)
-              </button>
-            )}
-          </div>
-
-          {/* 自分の手札 */}
-          <div className="flex flex-col items-center">
-            <div className="flex gap-2 flex-wrap justify-center">
-              {gameState?.me.hand.map((card, i) => (
-                <CardView key={i} card={card} />
-              ))}
-            </div>
-            <p className="text-xs text-slate-500 mt-2 tracking-widest">
-              YOUR HAND
-            </p>
-          </div>
-        </div>
-      )}
-
-      {/* ログウィンドウ */}
-      <div className="fixed bottom-0 left-0 w-full md:w-80 bg-black/80 text-green-400 text-xs p-2 font-mono max-h-32 overflow-auto border-t border-slate-700 pointer-events-none z-40 opacity-70">
-        {logs.map((log, i) => (
-          <div key={i}>{log}</div>
-        ))}
+          </main>
+        )}
       </div>
 
       {/* 推理モーダル */}
       {guessModal.show && (
-        <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-50 animate-in fade-in duration-200">
-          <div className="bg-slate-800 p-6 rounded-2xl border border-slate-600 shadow-2xl max-w-sm w-full mx-4">
-            <h3 className="text-xl font-bold mb-6 text-center text-white">
-              このカードの数字は？
+        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-end sm:items-center justify-center animate-in fade-in duration-200">
+          <div className="bg-white w-full max-w-sm rounded-t-3xl sm:rounded-3xl p-6 pb-10 sm:pb-6 shadow-2xl animate-in slide-in-from-bottom duration-300">
+            <h3 className="text-lg font-bold mb-6 text-center text-slate-800">
+              数字を推理してください
             </h3>
+
             <div className="grid grid-cols-4 gap-3 mb-6">
               {[...Array(12)].map((_, num) => (
                 <button
@@ -351,11 +416,11 @@ export default function Home() {
                   onClick={() => handleAttack(num)}
                   disabled={isProcessing || !isConnected}
                   className={`
-                    py-3 rounded-lg text-xl font-bold transition duration-150 active:scale-95
+                    py-4 rounded-xl text-xl font-bold transition active:scale-95 shadow-sm border
                     ${
-                      isProcessing || !isConnected
-                        ? "bg-slate-700 text-slate-500 cursor-wait"
-                        : "bg-slate-700 hover:bg-cyan-600 hover:text-white text-cyan-100"
+                      isProcessing
+                        ? "bg-gray-100 text-gray-300"
+                        : "bg-white border-gray-200 text-slate-700 hover:border-cyan-500 hover:text-cyan-600 hover:bg-cyan-50"
                     }
                   `}
                 >
@@ -363,31 +428,18 @@ export default function Home() {
                 </button>
               ))}
             </div>
+
             <button
               onClick={() => setGuessModal({ show: false, targetIndex: -1 })}
               disabled={isProcessing}
-              className="w-full py-3 bg-transparent border border-slate-600 text-slate-400 rounded-lg hover:bg-slate-700 transition"
+              className="w-full py-4 bg-gray-100 text-slate-500 font-bold rounded-xl hover:bg-gray-200 transition"
             >
               キャンセル
             </button>
           </div>
         </div>
       )}
-
-      <style jsx global>{`
-        .animate-bounce-short {
-          animation: bounce 0.5s infinite alternate;
-        }
-        @keyframes bounce {
-          from {
-            transform: translateY(0);
-          }
-          to {
-            transform: translateY(-5px);
-          }
-        }
-      `}</style>
-    </main>
+    </div>
   );
 }
 
@@ -401,30 +453,41 @@ function CardView({
   onClick?: () => void;
 }) {
   const isBlack = card.color === "black";
-  const content = isOpponent && !card.isOpen ? "?" : card.number;
+  const content = isOpponent && !card.isOpen ? "" : card.number;
 
   return (
     <div
       onClick={onClick}
       className={`
-        relative w-14 h-20 md:w-16 md:h-24 rounded-lg flex items-center justify-center text-2xl font-black shadow-lg border-2 select-none
+        relative w-14 h-20 md:w-16 md:h-24 rounded-lg flex items-center justify-center text-2xl font-black shadow-md border-[3px] select-none
         transition-all transform duration-300
         ${
           isBlack
-            ? "bg-slate-900 text-white border-slate-700 shadow-black/50"
-            : "bg-gray-100 text-slate-900 border-gray-300 shadow-white/10"
+            ? "bg-slate-800 text-white border-slate-600 shadow-slate-200"
+            : "bg-white text-slate-800 border-gray-200 shadow-gray-100"
         }
-        ${card.isOpen ? "opacity-100" : ""} 
+        ${card.isOpen ? "opacity-100 ring-2 ring-offset-2 ring-green-400" : ""} 
         ${
           !card.isOpen && isOpponent
-            ? "cursor-pointer hover:-translate-y-2 hover:border-cyan-400 hover:shadow-cyan-500/20"
+            ? "cursor-pointer hover:-translate-y-1 hover:border-cyan-400 hover:shadow-cyan-100"
             : ""
         }
       `}
     >
       {content}
+
+      {isOpponent && !card.isOpen && (
+        <div
+          className={`w-3 h-3 rounded-full ${
+            isBlack ? "bg-slate-700" : "bg-gray-200"
+          }`}
+        ></div>
+      )}
+
       {card.isOpen && isOpponent && (
-        <div className="absolute -top-1 -right-1 w-4 h-4 bg-red-500 rounded-full border-2 border-slate-900 shadow-sm animate-in zoom-in"></div>
+        <div className="absolute -top-2 -right-2 w-5 h-5 bg-green-500 text-white flex items-center justify-center rounded-full text-[10px] shadow-sm animate-in zoom-in border-2 border-white">
+          ✓
+        </div>
       )}
     </div>
   );

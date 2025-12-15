@@ -44,7 +44,6 @@ app.use(
 // 4桁のランダム数字IDを発行
 app.get("/game/new", (c) => {
   const roomId = Math.floor(1000 + Math.random() * 9000).toString();
-  console.log(`[API] Created new room request: ${roomId}`);
   return c.text(roomId);
 });
 
@@ -86,8 +85,6 @@ export class AlgoRoom extends DurableObject {
 
   // 状態配信
   broadcastState() {
-    // console.log(`[Broadcast] Sending state to ${this.sessions.size} clients. Phase: ${this.state.phase}`)
-
     this.sessions.forEach((playerId, ws) => {
       const myData = this.state.players.find((p) => p.id === playerId);
       const opponentData = this.state.players.find((p) => p.id !== playerId);
@@ -126,7 +123,7 @@ export class AlgoRoom extends DurableObject {
       try {
         ws.send(payload);
       } catch (e) {
-        console.error(`[Error] Failed to send to ${playerId}`);
+        // 送信エラーは無視
       }
     });
   }
@@ -135,16 +132,7 @@ export class AlgoRoom extends DurableObject {
     const data = JSON.parse(message as string);
     const senderId = this.sessions.get(ws);
 
-    // --- PING (ログ汚染を防ぐため早期リターン) ---
-    if (data.type === "PING") {
-      return;
-    }
-
-    console.log(
-      `[WS] Received from ${senderId || "Unknown"}:`,
-      data.type,
-      data
-    );
+    if (data.type === "PING") return;
 
     // 1. JOIN
     if (data.type === "JOIN") {
@@ -156,27 +144,23 @@ export class AlgoRoom extends DurableObject {
       const playerId = `User-${Math.random().toString(36).slice(-4)}`;
       this.sessions.set(ws, playerId);
       this.state.players.push({ id: playerId, hand: [] });
-      console.log(
-        `[JOIN] New player: ${playerId}. Total: ${this.state.players.length}`
-      );
 
       this.broadcastState();
 
       if (this.state.players.length === 2) {
-        console.log(`[GAME] 2 players ready. Starting game...`);
         this.startGame();
       }
+      return; // JOIN処理終了
     }
 
     // ゲーム中のアクション処理
+    // 自分のターンじゃない、またはPlayingじゃない場合
     if (
       this.state.phase !== "playing" ||
       this.state.turnPlayerId !== senderId
     ) {
-      // 自分のターンじゃない時のアクションは無視するが、
-      // フロントエンドの不整合を防ぐために念のためStateを送り返しても良い
+      // ★重要: クライアントのロックを解除するために必ず状態を返す
       if (["ATTACK", "STAY"].includes(data.type)) {
-        console.log(`[WARN] Action ignored (Not turn or Not playing)`);
         this.broadcastState();
       }
       return;
@@ -187,33 +171,27 @@ export class AlgoRoom extends DurableObject {
       const opponent = this.state.players.find((p) => p.id !== senderId);
 
       // バリデーション: 相手がいない、カードがない、既に開いている
+      // ★重要: ここでリターンする際も必ず broadcastState する
       if (
         !opponent ||
         !opponent.hand[data.targetIndex] ||
         opponent.hand[data.targetIndex].isOpen
       ) {
-        console.log(`[ATTACK] Invalid target. Sending state to unlock client.`);
-        this.broadcastState(); // ★重要: これがないとクライアントが止まる
+        this.broadcastState();
         return;
       }
 
       const targetCard = opponent.hand[data.targetIndex];
-      console.log(
-        `[ATTACK] Target: ${targetCard.number} (Guess: ${data.guess})`
-      );
 
       if (targetCard.number === data.guess) {
         // HIT
-        console.log(`[ATTACK] HIT!`);
         targetCard.isOpen = true;
         if (opponent.hand.every((c) => c.isOpen)) {
-          console.log(`[GAME] Winner: ${senderId}`);
           this.state.phase = "finished";
           this.state.winner = senderId;
         }
       } else {
         // MISS
-        console.log(`[ATTACK] MISS!`);
         if (this.state.drawnCard) {
           this.state.drawnCard.isOpen = true;
           this.insertDrawnCardToHand(senderId);
@@ -225,7 +203,6 @@ export class AlgoRoom extends DurableObject {
 
     // 3. STAY
     if (data.type === "STAY") {
-      console.log(`[STAY] Player chose to stay.`);
       if (this.state.drawnCard) {
         this.insertDrawnCardToHand(senderId);
       }
@@ -275,9 +252,6 @@ export class AlgoRoom extends DurableObject {
   drawCard() {
     if (this.state.deck.length > 0) {
       this.state.drawnCard = this.state.deck.pop() || null;
-      console.log(
-        `[GAME] Card drawn. Deck remaining: ${this.state.deck.length}`
-      );
     } else {
       this.state.drawnCard = null;
     }
@@ -289,7 +263,6 @@ export class AlgoRoom extends DurableObject {
     );
     const nextIndex = (currentIndex + 1) % 2;
     this.state.turnPlayerId = this.state.players[nextIndex].id;
-    console.log(`[GAME] Turn changed to: ${this.state.turnPlayerId}`);
     this.drawCard();
   }
 
@@ -311,27 +284,21 @@ export class AlgoRoom extends DurableObject {
   }
 
   async webSocketClose(ws: WebSocket) {
-    const pid = this.sessions.get(ws)
-    if(pid) {
-      console.log(`[WS] Closed: ${pid}`)
-      this.sessions.delete(ws)
-      this.state.players = this.state.players.filter(p => p.id !== pid)
-      
-      // ★修正: ゲーム中(playing)の場合のみ、強制終了・リセットする
-      if (this.state.phase === 'playing') {
-        this.state.phase = 'finished' 
-        this.state.winner = 'opponent-left' // 相手落ちで勝ち
-        this.broadcastState()
-        
-        // 部屋を畳む
-        this.state.players = []
-        this.state.phase = 'waiting'
-        this.state.deck = []
-        console.log('[GAME] Reset room due to disconnection during game')
+    const pid = this.sessions.get(ws);
+    if (pid) {
+      this.sessions.delete(ws);
+      this.state.players = this.state.players.filter((p) => p.id !== pid);
+
+      if (this.state.phase === "playing") {
+        this.state.phase = "finished";
+        this.state.winner = "opponent-left";
+        this.broadcastState();
+
+        this.state.players = [];
+        this.state.phase = "waiting";
+        this.state.deck = [];
       } else {
-        // ★待機中(waiting)なら、リセットせずに今の人数を通知するだけ
-        this.broadcastState()
-        console.log(`[WAIT] Player left. Remaining: ${this.state.players.length}`)
+        this.broadcastState();
       }
     }
   }

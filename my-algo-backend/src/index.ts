@@ -2,13 +2,14 @@ import { Hono } from "hono";
 import { cors } from "hono/cors";
 import { DurableObject } from "cloudflare:workers";
 
-// --- 1. 型定義 (ゲームのデータ構造) ---
+// --- 型定義 ---
 type CardColor = "black" | "white";
 
 interface Card {
   color: CardColor;
-  number: number; // 0-11
+  number: number;
   isOpen: boolean;
+  id: string;
 }
 
 interface Player {
@@ -19,7 +20,10 @@ interface Player {
 interface GameState {
   phase: "waiting" | "playing" | "finished";
   players: Player[];
-  turnPlayerIndex: number;
+  deck: Card[];
+  turnPlayerId: string | null;
+  drawnCard: Card | null;
+  winner: string | null;
 }
 
 type Bindings = {
@@ -28,44 +32,46 @@ type Bindings = {
 
 const app = new Hono<{ Bindings: Bindings }>();
 
-
 app.use(
   "/*",
   cors({
-    origin: "*", // 本番ではドメインを指定しますが、開発中はこれでOK
+    origin: "*",
     allowHeaders: ["Content-Type", "Upgrade"],
     allowMethods: ["GET", "POST", "OPTIONS"],
   })
 );
 
-// --- 2. ルーティング ---
-app.get("/game/new", async (c) => {
-  const id = c.env.ALGO_ROOM.newUniqueId();
-  return c.text(id.toString());
+// --- 変更点1: 4桁のランダム数字IDを発行 ---
+app.get("/game/new", (c) => {
+  // 1000 ~ 9999 の乱数を生成
+  const roomId = Math.floor(1000 + Math.random() * 9000).toString();
+  return c.text(roomId);
 });
 
 app.get("/game/:id", async (c) => {
   const id = c.req.param("id");
-  const stubId = c.env.ALGO_ROOM.idFromString(id);
+  // --- 変更点2: idFromName を使って、指定した文字列(数字)から部屋を作る ---
+  const stubId = c.env.ALGO_ROOM.idFromName(id);
   const stub = c.env.ALGO_ROOM.get(stubId);
   return stub.fetch(c.req.raw);
 });
 
 export default app;
 
-// --- 3. Durable Object (ゲームロジック) ---
+// --- Durable Object ---
 export class AlgoRoom extends DurableObject {
-  // 接続中のクライアントとプレイヤー情報を紐付けるMap
   sessions: Map<WebSocket, string> = new Map();
   state: GameState;
 
   constructor(ctx: DurableObjectState, env: Bindings) {
     super(ctx, env);
-    // 初期状態
     this.state = {
       phase: "waiting",
       players: [],
-      turnPlayerIndex: 0,
+      deck: [],
+      turnPlayerId: null,
+      drawnCard: null,
+      winner: null,
     };
   }
 
@@ -74,123 +80,204 @@ export class AlgoRoom extends DurableObject {
     if (!upgradeHeader || upgradeHeader !== "websocket") {
       return new Response("Expected Upgrade: websocket", { status: 426 });
     }
-
     const { 0: client, 1: server } = new WebSocketPair();
-
     this.ctx.acceptWebSocket(server);
-
     return new Response(null, { status: 101, webSocket: client });
   }
 
-  async webSocketMessage(ws: WebSocket, message: string | ArrayBuffer) {
-    const data = JSON.parse(message as string);
-
-    // --- メッセージ処理 ---
-
-    // 1. ゲーム参加 (JOIN)
-    if (data.type === "JOIN") {
-      // プレイヤー登録 (最大2人)
-      if (this.state.players.length >= 2) {
-        ws.send(JSON.stringify({ type: "ERROR", message: "Room is full" }));
-        return;
-      }
-
-      const playerId = `player-${this.state.players.length + 1}`;
-      this.sessions.set(ws, playerId);
-
-      this.state.players.push({ id: playerId, hand: [] });
-      console.log(`${playerId} joined. Total: ${this.state.players.length}`);
-
-      // 2人揃ったらゲーム開始
-      if (this.state.players.length === 2) {
-        this.startGame();
-      } else {
-        // まだ1人なら待機メッセージ
-        this.broadcast({ type: "WAITING", message: "Waiting for opponent..." });
-      }
-    }
-  }
-
-  // ゲーム開始処理
-  startGame() {
-    this.state.phase = "playing";
-
-    // 1. 山札作成 (0-11の黒・白)
-    let deck: Card[] = [];
-    for (let i = 0; i < 12; i++) {
-      deck.push({ color: "black", number: i, isOpen: false });
-      deck.push({ color: "white", number: i, isOpen: false });
-    }
-
-    // 2. シャッフル (Fisher-Yates)
-    for (let i = deck.length - 1; i > 0; i--) {
-      const j = Math.floor(Math.random() * (i + 1));
-      [deck[i], deck[j]] = [deck[j], deck[i]];
-    }
-
-    // 3. カードを配る (各4枚)
-    this.state.players.forEach((player) => {
-      player.hand = deck.splice(0, 4);
-
-      // ★重要★ アルゴのルールでソート
-      // 数字が小さい順。同じ数字なら黒が小さい（左）
-      player.hand.sort((a, b) => {
-        if (a.number !== b.number) return a.number - b.number;
-        return a.color === "black" ? -1 : 1;
-      });
-    });
-
-    // 4. 各プレイヤーに通知
+  // 状態配信（UI更新の要）
+  broadcastState() {
     this.sessions.forEach((playerId, ws) => {
       const myData = this.state.players.find((p) => p.id === playerId);
       const opponentData = this.state.players.find((p) => p.id !== playerId);
 
-      // ★ 相手の手札情報を「マスク」して作成
-      // 数字は隠すが、色と位置、オープン状態は送る
-      const opponentHandMasked = opponentData?.hand.map((card) => ({
-        color: card.color,
-        isOpen: card.isOpen,
-        number: card.isOpen ? card.number : null, // 開いている時だけ数字を入れる
-      }));
+      // まだ自分が参加処理中の場合はスキップ
+      if (!myData) return;
 
-      ws.send(
-        JSON.stringify({
-          type: "GAME_START",
-          me: myData,
-          opponentHand: opponentHandMasked, // ★ ここを変更（枚数だけでなく配列を送る）
-        })
-      );
+      const opponentHandMasked =
+        opponentData?.hand.map((c) => ({
+          ...c,
+          number: c.isOpen ? c.number : null,
+        })) || [];
+
+      let drawnCardMasked = null;
+      if (this.state.drawnCard) {
+        const isMyTurn = this.state.turnPlayerId === playerId;
+        drawnCardMasked = {
+          ...this.state.drawnCard,
+          number:
+            isMyTurn || this.state.drawnCard.isOpen
+              ? this.state.drawnCard.number
+              : null,
+        };
+      }
+
+      const payload = JSON.stringify({
+        type: "UPDATE_STATE",
+        phase: this.state.phase,
+        turnPlayerId: this.state.turnPlayerId,
+        me: myData,
+        opponentHand: opponentHandMasked,
+        drawnCard: drawnCardMasked,
+        winner: this.state.winner,
+        deckCount: this.state.deck.length,
+      });
+
+      try {
+        ws.send(payload);
+      } catch (e) {
+        // エラー無視
+      }
     });
   }
 
-  // 全員に送信するヘルパー関数
-  broadcast(data: any) {
-    const msg = JSON.stringify(data);
-    this.sessions.forEach((_, ws) => {
-      try {
-        ws.send(msg);
-      } catch (e) {}
+  async webSocketMessage(ws: WebSocket, message: string | ArrayBuffer) {
+    const data = JSON.parse(message as string);
+    const senderId = this.sessions.get(ws);
+
+    if (data.type === "JOIN") {
+      // 既に満員なら弾く
+      if (this.state.players.length >= 2) {
+        ws.send(JSON.stringify({ type: "ERROR", message: "満員です" }));
+        return;
+      }
+
+      // ID生成
+      const playerId = `User-${Math.random().toString(36).slice(-4)}`;
+      this.sessions.set(ws, playerId);
+      this.state.players.push({ id: playerId, hand: [] });
+
+      // --- 変更点3: 参加したら即座に全員（自分含む）へ状態を送信 ---
+      // これにより「待機中」画面が表示されるようになる
+      this.broadcastState();
+
+      // 2人揃ったら開始
+      if (this.state.players.length === 2) {
+        this.startGame();
+      }
+    }
+
+    if (this.state.phase !== "playing" || this.state.turnPlayerId !== senderId)
+      return;
+
+    if (data.type === "ATTACK") {
+      const opponent = this.state.players.find((p) => p.id !== senderId);
+      if (!opponent) return;
+
+      const targetCard = opponent.hand[data.targetIndex];
+      if (targetCard && !targetCard.isOpen) {
+        if (targetCard.number === data.guess) {
+          targetCard.isOpen = true;
+          if (opponent.hand.every((c) => c.isOpen)) {
+            this.state.phase = "finished";
+            this.state.winner = senderId;
+          }
+        } else {
+          if (this.state.drawnCard) {
+            this.state.drawnCard.isOpen = true;
+            this.insertDrawnCardToHand(senderId);
+          }
+          this.changeTurn();
+        }
+        this.broadcastState();
+      }
+    }
+
+    if (data.type === "STAY") {
+      if (this.state.drawnCard) {
+        this.insertDrawnCardToHand(senderId);
+      }
+      this.changeTurn();
+      this.broadcastState();
+    }
+  }
+
+  startGame() {
+    this.state.phase = "playing";
+    this.state.winner = null;
+    this.state.deck = [];
+    for (let i = 0; i < 12; i++) {
+      this.state.deck.push({
+        color: "black",
+        number: i,
+        isOpen: false,
+        id: `b-${i}`,
+      });
+      this.state.deck.push({
+        color: "white",
+        number: i,
+        isOpen: false,
+        id: `w-${i}`,
+      });
+    }
+    // シャッフル
+    for (let i = this.state.deck.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [this.state.deck[i], this.state.deck[j]] = [
+        this.state.deck[j],
+        this.state.deck[i],
+      ];
+    }
+
+    // 配布
+    this.state.players.forEach((p) => {
+      p.hand = this.state.deck.splice(0, 4);
+      this.sortHand(p.hand);
+    });
+
+    this.state.turnPlayerId = this.state.players[0].id;
+    this.drawCard();
+    this.broadcastState();
+  }
+
+  drawCard() {
+    if (this.state.deck.length > 0) {
+      this.state.drawnCard = this.state.deck.pop() || null;
+    } else {
+      this.state.drawnCard = null;
+    }
+  }
+
+  changeTurn() {
+    const currentIndex = this.state.players.findIndex(
+      (p) => p.id === this.state.turnPlayerId
+    );
+    const nextIndex = (currentIndex + 1) % 2;
+    this.state.turnPlayerId = this.state.players[nextIndex].id;
+    this.drawCard();
+  }
+
+  insertDrawnCardToHand(playerId: string) {
+    if (!this.state.drawnCard) return;
+    const player = this.state.players.find((p) => p.id === playerId);
+    if (player) {
+      player.hand.push(this.state.drawnCard);
+      this.sortHand(player.hand);
+      this.state.drawnCard = null;
+    }
+  }
+
+  sortHand(hand: Card[]) {
+    hand.sort((a, b) => {
+      if (a.number !== b.number) return a.number - b.number;
+      return a.color === "black" ? -1 : 1;
     });
   }
 
   async webSocketClose(ws: WebSocket) {
-    // 1. セッションマップからプレイヤーIDを探す
-    const playerId = this.sessions.get(ws);
-    if (!playerId) return;
+    const pid = this.sessions.get(ws);
+    if (pid) {
+      this.sessions.delete(ws);
+      this.state.players = this.state.players.filter((p) => p.id !== pid);
 
-    // 2. プレイヤーリストから削除する
-    this.state.players = this.state.players.filter((p) => p.id !== playerId);
-    this.sessions.delete(ws);
+      // 誰かが抜けたら強制リセット
+      this.state.phase = "finished"; // finishedにしてから
+      this.broadcastState(); // 一旦通知
 
-    console.log(`${playerId} left. Remaining: ${this.state.players.length}`);
-
-    // 3. ゲーム中なら「相手が切断しました」と通知してゲームをリセット（簡易実装）
-    if (this.state.phase === "playing") {
-      this.state.phase = "finished";
-      this.broadcast({ type: "OPPONENT_LEFT", message: "相手が切断しました" });
-      // 部屋の状態をリセット（次の対戦のために）
+      // 完全に初期化
       this.state.players = [];
       this.state.phase = "waiting";
+      this.state.deck = [];
     }
   }
 }

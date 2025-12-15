@@ -132,7 +132,13 @@ export class AlgoRoom extends DurableObject {
     const data = JSON.parse(message as string);
     const senderId = this.sessions.get(ws);
 
-    if (data.type === "PING") return;
+    // ★ PINGに対してPONGを返す (重要: 接続維持)
+    if (data.type === "PING") {
+      try {
+        ws.send(JSON.stringify({ type: "PONG" }));
+      } catch (e) {}
+      return;
+    }
 
     // 1. JOIN
     if (data.type === "JOIN") {
@@ -159,7 +165,7 @@ export class AlgoRoom extends DurableObject {
       this.state.phase !== "playing" ||
       this.state.turnPlayerId !== senderId
     ) {
-      // ★重要: クライアントのロックを解除するために必ず状態を返す
+      // クライアントのロックを解除するために必ず状態を返す
       if (["ATTACK", "STAY"].includes(data.type)) {
         this.broadcastState();
       }
@@ -171,7 +177,6 @@ export class AlgoRoom extends DurableObject {
       const opponent = this.state.players.find((p) => p.id !== senderId);
 
       // バリデーション: 相手がいない、カードがない、既に開いている
-      // ★重要: ここでリターンする際も必ず broadcastState する
       if (
         !opponent ||
         !opponent.hand[data.targetIndex] ||

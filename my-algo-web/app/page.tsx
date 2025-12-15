@@ -1,20 +1,18 @@
 "use client";
 
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, useCallback } from "react";
 import {
   ArrowRight,
   Copy,
   Layers,
-  AlertCircle,
   Play,
   LogOut,
   RotateCcw,
+  RefreshCw, // 再接続アイコン用
 } from "lucide-react";
 
 // --- 設定 ---
-// ローカルならlocalhost, 本番なら自分のドメインに書き換えてください
-// const API_URL = "http://localhost:8787";
-// const WS_URL = "ws://localhost:8787";
+// 本番環境用URL
 const API_URL = "https://my-algo-backend.haruki1009kk.workers.dev";
 const WS_URL = "wss://my-algo-backend.haruki1009kk.workers.dev";
 
@@ -59,23 +57,31 @@ export default function Home() {
 
   const wsRef = useRef<WebSocket | null>(null);
   const pingIntervalRef = useRef<NodeJS.Timeout | null>(null);
-  // ★安全装置: タイムアウト用タイマー
   const timeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const shouldReconnectRef = useRef(true);
+
+  // 定義順序の問題を避けるため、useEffectより前に定義
+  const cleanupConnection = () => {
+    if (pingIntervalRef.current) clearInterval(pingIntervalRef.current);
+    if (timeoutRef.current) clearTimeout(timeoutRef.current);
+    if (wsRef.current) {
+      wsRef.current.close();
+      wsRef.current = null;
+    }
+  };
 
   useEffect(() => {
     return () => {
-      if (pingIntervalRef.current) clearInterval(pingIntervalRef.current);
-      if (timeoutRef.current) clearTimeout(timeoutRef.current);
-      if (wsRef.current) wsRef.current.close();
+      shouldReconnectRef.current = false;
+      cleanupConnection();
     };
   }, []);
 
-  // ★ロック解除の安全装置
   const startProcessing = () => {
     setIsProcessing(true);
-    // 3秒経っても応答がなければ強制解除
     if (timeoutRef.current) clearTimeout(timeoutRef.current);
     timeoutRef.current = setTimeout(() => {
+      console.warn("Operation timed out. Unlocking UI.");
       setIsProcessing(false);
     }, 3000);
   };
@@ -85,6 +91,95 @@ export default function Home() {
     if (timeoutRef.current) clearTimeout(timeoutRef.current);
   };
 
+  const sendMessage = useCallback((msg: object) => {
+    if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) {
+      console.warn("WebSocket is not open. Cannot send message.");
+      return false;
+    }
+    try {
+      wsRef.current.send(JSON.stringify(msg));
+      return true;
+    } catch (e) {
+      console.error("Failed to send message:", e);
+      return false;
+    }
+  }, []);
+
+  // 修正: 再帰呼び出しがあるため関数宣言に変更してTDZを回避
+  function joinGame(id: string) {
+    if (!id) return;
+    shouldReconnectRef.current = true;
+    cleanupConnection();
+
+    console.log(`Connecting to room: ${id}`);
+    const ws = new WebSocket(`${WS_URL}/game/${id}`);
+    wsRef.current = ws;
+
+    ws.onopen = () => {
+      console.log("WebSocket connected");
+      setIsConnected(true);
+
+      sendMessage({ type: "JOIN" });
+      setJoined(true);
+
+      pingIntervalRef.current = setInterval(() => {
+        sendMessage({ type: "PING" });
+      }, 30000);
+    };
+
+    ws.onmessage = (event) => {
+      try {
+        const data = JSON.parse(event.data);
+
+        if (data.type === "PONG") return;
+
+        if (data.type === "UPDATE_STATE") {
+          setGameState(data);
+          stopProcessing();
+
+          if (data.phase === "playing") {
+            if (data.turnPlayerId !== data.me.id) {
+              setGuessModal({ show: false, targetIndex: -1 });
+            }
+          }
+        }
+        if (data.type === "ERROR") {
+          alert(data.message);
+          stopProcessing();
+          setJoined(false);
+          shouldReconnectRef.current = false;
+        }
+      } catch (e) {
+        console.error("Failed to parse message", e);
+      }
+    };
+
+    ws.onerror = (e) => {
+      console.error("WebSocket error:", e);
+      stopProcessing();
+    };
+
+    ws.onclose = () => {
+      console.log("WebSocket closed");
+      setIsConnected(false);
+      stopProcessing();
+      if (pingIntervalRef.current) clearInterval(pingIntervalRef.current);
+
+      if (shouldReconnectRef.current && joined) {
+        console.log("Attempting to reconnect in 3s...");
+        setTimeout(() => {
+          if (shouldReconnectRef.current) {
+            joinGame(id); // 再帰呼び出しでも関数宣言なのでOK
+          }
+        }, 3000);
+      } else {
+        setJoined(false);
+        setGameState(null);
+      }
+    };
+  }
+
+  // ★修正: joinGame の後に定義する
   const createRoom = async () => {
     try {
       const res = await fetch(`${API_URL}/game/new`);
@@ -92,83 +187,32 @@ export default function Home() {
       setRoomId(id);
       joinGame(id);
     } catch (e) {
+      // エラー変数を使用する
+      console.error(e);
       alert("サーバーに接続できません");
     }
   };
 
-  const joinGame = (id: string) => {
-    if (!id) return;
-    if (wsRef.current) wsRef.current.close();
-    if (pingIntervalRef.current) clearInterval(pingIntervalRef.current);
-
-    const ws = new WebSocket(`${WS_URL}/game/${id}`);
-    wsRef.current = ws;
-
-    ws.onopen = () => {
-      setIsConnected(true);
-      ws.send(JSON.stringify({ type: "JOIN" }));
-      setJoined(true);
-
-      pingIntervalRef.current = setInterval(() => {
-        if (ws.readyState === WebSocket.OPEN) {
-          ws.send(JSON.stringify({ type: "PING" }));
-        }
-      }, 30000);
-    };
-
-    ws.onmessage = (event) => {
-      const data = JSON.parse(event.data);
-      if (data.type === "UPDATE_STATE") {
-        setGameState(data);
-        stopProcessing(); // ★受信したらロック解除
-
-        if (data.phase === "playing") {
-          if (data.turnPlayerId !== data.me.id) {
-            setGuessModal({ show: false, targetIndex: -1 });
-          }
-        }
-      }
-      if (data.type === "ERROR") {
-        alert(data.message);
-        stopProcessing();
-        setJoined(false);
-      }
-    };
-
-    ws.onerror = () => {
-      stopProcessing();
-      setIsConnected(false);
-    };
-
-    ws.onclose = () => {
-      setIsConnected(false);
-      setJoined(false);
-      setGameState(null);
-      stopProcessing();
-      if (pingIntervalRef.current) clearInterval(pingIntervalRef.current);
-    };
-  };
-
   const handleAttack = (guess: number) => {
-    if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) return;
     if (isProcessing) return;
 
-    startProcessing(); // ★タイムアウト付きロック開始
-    wsRef.current.send(
-      JSON.stringify({
-        type: "ATTACK",
-        targetIndex: guessModal.targetIndex,
-        guess: guess,
-      })
-    );
+    startProcessing();
+    const success = sendMessage({
+      type: "ATTACK",
+      targetIndex: guessModal.targetIndex,
+      guess: guess,
+    });
+
+    if (!success) stopProcessing();
   };
 
   const handleStay = () => {
-    if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) return;
     if (isProcessing) return;
 
-    startProcessing(); // ★タイムアウト付きロック開始
-    wsRef.current.send(JSON.stringify({ type: "STAY" }));
+    startProcessing();
+    const success = sendMessage({ type: "STAY" });
+
+    if (!success) stopProcessing();
   };
 
   const copyRoomId = () => {
@@ -182,10 +226,11 @@ export default function Home() {
 
   return (
     <div className="min-h-screen bg-gray-50 text-slate-800 font-sans pb-10">
+      {/* 接続切れアラート (再接続中を表示) */}
       {joined && !isConnected && (
-        <div className="fixed top-0 left-0 w-full bg-red-500 text-white text-center py-2 z-[100] font-bold shadow-md flex items-center justify-center gap-2">
-          <AlertCircle size={20} />
-          サーバー接続切れ。リロードしてください。
+        <div className="fixed top-0 left-0 w-full bg-yellow-500 text-white text-center py-2 z-[100] font-bold shadow-md flex items-center justify-center gap-2 animate-pulse">
+          <RefreshCw size={20} className="animate-spin" />
+          接続が切れました。再接続中...
         </div>
       )}
 
@@ -197,7 +242,10 @@ export default function Home() {
           </h1>
           {joined && (
             <button
-              onClick={() => window.location.reload()}
+              onClick={() => {
+                shouldReconnectRef.current = false;
+                window.location.reload();
+              }}
               className="text-slate-400 hover:text-red-500"
             >
               <LogOut size={20} />

@@ -206,10 +206,14 @@ export default function Home() {
   const handleAttack = (guess: number) => {
     if (isProcessing) return;
 
+    // 保存してからモーダルを閉じる（モーダルは数字を押したら必ず閉じる）
+    const targetIndex = guessModal.targetIndex;
+    setGuessModal({ show: false, targetIndex: -1 });
+
     startProcessing();
     const success = sendMessage({
       type: "ATTACK",
-      targetIndex: guessModal.targetIndex,
+      targetIndex: targetIndex,
       guess: guess,
     });
 
@@ -382,6 +386,20 @@ export default function Home() {
                       : "Opponent's Turn"}
                   </span>
                 </div>
+              </div>
+
+              {/* Connection indicator (separate from turn status) */}
+              <div className="flex items-center gap-3 px-2">
+                <div
+                  className={`w-3 h-3 rounded-full shadow-sm ${
+                    isConnected ? "bg-green-500" : "bg-red-400"
+                  }`}
+                  title={isConnected ? "Connected" : "Disconnected"}
+                  aria-label="connection-status"
+                />
+                <span className="hidden sm:block text-xs font-bold text-slate-400">
+                  {isConnected ? "Online" : "Offline"}
+                </span>
               </div>
 
               <button

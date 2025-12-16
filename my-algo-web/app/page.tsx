@@ -15,6 +15,8 @@ import {
 // 本番環境用URL
 const API_URL = "https://my-algo-backend.haruki1009kk.workers.dev";
 const WS_URL = "wss://my-algo-backend.haruki1009kk.workers.dev";
+// const API_URL = "https:localhost:8787";
+// const WS_URL = "wss://localhost:8787";
 
 // --- 型定義 ---
 type Card = {
@@ -133,7 +135,7 @@ export default function Home() {
 
       pingIntervalRef.current = setInterval(() => {
         sendMessage({ type: "PING" });
-      }, 30000);
+      }, 5000);
     };
 
     ws.onmessage = (event) => {

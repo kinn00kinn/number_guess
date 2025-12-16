@@ -77,7 +77,8 @@ export default function Home() {
     ja: {
       reconnecting: "再接続しています...",
       welcomeTitle: "おかえりなさい。",
-      welcomeDesc: "番号を入力してゲームに参加、\nまたは新しい部屋を作成してください。",
+      welcomeDesc:
+        "番号を入力してゲームに参加、\nまたは新しい部屋を作成してください。",
       roomLabel: "ルーム番号",
       join: "参加する",
       or: "または",
@@ -221,7 +222,12 @@ export default function Home() {
           // If the server opened the targeted opponent card (correct guess),
           // close the guess modal even if the turn remains with the player.
           const gm = guessModalRef.current;
-          if (gm && gm.show && typeof gm.targetIndex === "number" && gm.targetIndex >= 0) {
+          if (
+            gm &&
+            gm.show &&
+            typeof gm.targetIndex === "number" &&
+            gm.targetIndex >= 0
+          ) {
             const idx = gm.targetIndex;
             if (
               data.opponentHand &&
@@ -518,7 +524,7 @@ export default function Home() {
                 className="mr-2 px-4 py-2 bg-slate-50 hover:bg-slate-100 rounded-xl flex flex-col items-end transition-colors active:scale-95 group"
               >
                 <span className="text-[10px] font-bold text-slate-400 tracking-widest uppercase flex items-center gap-1">
-                    {t.roomIdLabel}
+                  {t.roomIdLabel}
                   {showCopyAlert && (
                     <Check size={10} className="text-green-500" />
                   )}
@@ -627,9 +633,7 @@ export default function Home() {
                 <h3 className="text-xl font-bold text-slate-900">
                   {t.guessTitle}
                 </h3>
-                <p className="text-slate-400 text-xs mt-1">
-                  {t.guessDesc}
-                </p>
+                <p className="text-slate-400 text-xs mt-1">{t.guessDesc}</p>
               </div>
 
               <div className="grid grid-cols-4 gap-3">

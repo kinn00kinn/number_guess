@@ -13,10 +13,11 @@ export function useGame(lang: Lang) {
   const [hasMoved, setHasMoved] = useState(false);
   const [gameLogs, setGameLogs] = useState<LogItem[]>([]);
 
+  // 直近の攻撃情報（吹き出し表示用）
   const [lastAttack, setLastAttack] = useState<{
     targetIndex: number;
     guess: number;
-    isYourCard: boolean;
+    isYourCard: boolean; // trueなら「自分の手札」の上に表示、falseなら「相手の手札」
   } | null>(null);
 
   const [guessModal, setGuessModal] = useState<{
@@ -113,16 +114,20 @@ export function useGame(lang: Lang) {
           const data = JSON.parse(event.data);
           if (data.type === "PONG") return;
 
-          // ★攻撃通知: 相手の行動を受信
+          // ★★★ 修正ポイント: 相手からの攻撃通知を受信して表示する ★★★
           if (data.type === "ATTACK_NOTIFY") {
-            const isMe = data.attackerId === prevGameStateRef.current?.me.id;
+            // attackerId が自分でない場合 ＝ 相手が自分を攻撃してきた
+            const myId = prevGameStateRef.current?.me.id;
+            const isMe = data.attackerId === myId;
+
             if (!isMe) {
-              // 上書きすることで、前の表示を消して新しい攻撃を表示
+              // 相手視点の targetIndex は、自分視点では「自分の手札のindex」
               setLastAttack({
                 targetIndex: data.targetIndex,
                 guess: data.guess,
-                isYourCard: true,
+                isYourCard: true, // 自分のカードに吹き出しを出す
               });
+
               addLog(
                 t.logDefended
                   .replace("{i}", `${data.targetIndex + 1}`)
@@ -136,6 +141,7 @@ export function useGame(lang: Lang) {
             const prev = prevGameStateRef.current;
 
             if (prev) {
+              // ログ: 自分の手札が開いた (守備失敗)
               if (prev.me && data.me) {
                 data.me.hand.forEach((c: Card, idx: number) => {
                   const prevCard = prev.me.hand[idx];
@@ -144,6 +150,7 @@ export function useGame(lang: Lang) {
                   }
                 });
               }
+              // ログ: 相手の手札が開いた (攻撃成功)
               if (prev.opponentHand && data.opponentHand) {
                 data.opponentHand.forEach((c: Card, idx: number) => {
                   const prevCard = prev.opponentHand[idx];
@@ -156,14 +163,11 @@ export function useGame(lang: Lang) {
               const isMyTurnNow = data.turnPlayerId === data.me.id;
               const wasMyTurn = prev.turnPlayerId === prev.me.id;
 
-              // ターン交代時の処理
+              // ターンが自分に回ってきた時だけリセット
               if (!wasMyTurn && isMyTurnNow) {
-                setHasMoved(false); // 初手スキップ防止のリセット
-
-                // ★修正: ここで setLastAttack(null) を消しました
-                // 相手が間違えてターンが自分に回ってきた場合、
-                // 相手のミス（宣言した数字）を画面に残すためです。
-                // 自分が次のアクションを起こした時に上書きされます。
+                setHasMoved(false);
+                // 注意: ここで setLastAttack(null) をしないことで、
+                // 相手が間違えた時の「5?」という表示を残したまま自分のターンを開始できる
               }
             }
 
@@ -171,7 +175,7 @@ export function useGame(lang: Lang) {
             setGameState(data);
             stopProcessing();
 
-            // 状況に応じてモーダルを閉じる
+            // モーダル制御
             const gm = guessModalRef.current;
             if (gm.show && gm.targetIndex >= 0) {
               if (data.opponentHand?.[gm.targetIndex]?.isOpen) {
@@ -228,11 +232,11 @@ export function useGame(lang: Lang) {
 
       startProcessing();
 
-      // ★新しい攻撃をしたので、ここで lastAttack を上書き
+      // 自分が攻撃した時は即座にローカルステートを更新
       setLastAttack({
         targetIndex,
         guess,
-        isYourCard: false,
+        isYourCard: false, // 相手のカードへの攻撃
       });
 
       const success = sendMessage({ type: "ATTACK", targetIndex, guess });
@@ -253,13 +257,14 @@ export function useGame(lang: Lang) {
 
   const handleStay = useCallback(() => {
     if (isProcessing) return;
-    if (!hasMoved) return;
+    if (!hasMoved) return; // 攻撃していないならStay不可
 
     startProcessing();
     const success = sendMessage({ type: "STAY" });
     if (success) {
       addLog(lang === "ja" ? "パスしました" : "Passed turn", "defense");
-      setLastAttack(null); // パスした時はクリアしてOK
+      // 自分がパスしたら、自分の攻撃表示は消してOK
+      setLastAttack(null);
     } else {
       stopProcessing();
     }

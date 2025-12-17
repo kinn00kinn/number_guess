@@ -67,14 +67,24 @@ export default function Home() {
   const guessModalClosingRef = useRef(false);
   // Ref to keep latest guessModal state available inside WebSocket callbacks
   const guessModalRef = useRef(guessModal);
+  const prevGameStateRef = useRef<GameState | null>(null);
 
   useEffect(() => {
     guessModalRef.current = guessModal;
   }, [guessModal]);
 
+  // ブラウザ側での初手パス抑制フラグ
+  const [hasMoved, setHasMoved] = useState(false);
+  // アクションログ（簡易）
+  const [actionLog, setActionLog] = useState<string[]>([]);
+  const [showHelp, setShowHelp] = useState(false);
+
   // --- translations ---
   const translations: Record<string, Record<string, string>> = {
     ja: {
+      helpTitle: "操作マニュアル",
+      helpContent:
+        "操作方法:\n- カードをタップして推理モーダルを開く\n- 数字を選んで攻撃 (正解ならカードが公開)\n- 初手はパスできません\n- 右上のJA/ENで言語切替\nログはステータス下に表示されます。",
       reconnecting: "再接続しています...",
       welcomeTitle: "おかえりなさい。",
       welcomeDesc:
@@ -103,6 +113,9 @@ export default function Home() {
       roomIdLabel: "ルームID",
     },
     en: {
+      helpTitle: "How to play",
+      helpContent:
+        "How to play:\n- Tap opponent card to open guess modal\n- Choose a number to attack (correct guess reveals card)\n- You cannot pass on your first move\n- Switch language with JA/EN at top-right\nAction log is shown under status.",
       reconnecting: "Reconnecting...",
       welcomeTitle: "Welcome back.",
       welcomeDesc: "Enter a room number to join, or create a new room.",
@@ -203,6 +216,7 @@ export default function Home() {
 
       sendMessage({ type: "JOIN" });
       setJoined(true);
+      setHasMoved(false);
 
       pingIntervalRef.current = setInterval(() => {
         sendMessage({ type: "PING" });
@@ -216,6 +230,41 @@ export default function Home() {
         if (data.type === "PONG") return;
 
         if (data.type === "UPDATE_STATE") {
+          // 差分を取り、ログや初手フラグを更新
+          const prev = prevGameStateRef.current;
+          if (prev) {
+            // 自分の手札が開かれた差分 -> 相手が当てた
+            if (prev.me && data.me) {
+              data.me.hand.forEach((c: Card, idx: number) => {
+                const prevCard = prev.me.hand[idx];
+                if (prevCard && !prevCard.isOpen && c.isOpen) {
+                  setActionLog((s) => [
+                    `Your card #${idx} was revealed: ${c.number}`,
+                    ...s,
+                  ].slice(0, 10));
+                }
+              });
+            }
+            // 相手の手札が開かれた差分 -> 自分が当てた
+            if (prev.opponentHand && data.opponentHand) {
+              data.opponentHand.forEach((c: Card, idx: number) => {
+                const prevCard = prev.opponentHand[idx];
+                if (prevCard && !prevCard.isOpen && c.isOpen) {
+                  setActionLog((s) => [
+                    `Opponent card #${idx} revealed: ${c.number}`,
+                    ...s,
+                  ].slice(0, 10));
+                }
+              });
+            }
+          }
+
+          // フェーズ移行で初手フラグをリセット
+          if (prev && prev.phase !== data.phase && data.phase === "playing") {
+            setHasMoved(false);
+          }
+
+          prevGameStateRef.current = data;
           setGameState(data);
           stopProcessing();
 
@@ -310,8 +359,12 @@ export default function Home() {
       targetIndex: targetIndex,
       guess: guess,
     });
-
-    if (!success) stopProcessing();
+    if (success) {
+      setHasMoved(true);
+      setActionLog((s) => [`You attacked opponent #${targetIndex} → ${guess}`, ...s].slice(0, 10));
+    } else {
+      stopProcessing();
+    }
   };
 
   const handleStay = () => {
@@ -319,8 +372,12 @@ export default function Home() {
 
     startProcessing();
     const success = sendMessage({ type: "STAY" });
-
-    if (!success) stopProcessing();
+    if (success) {
+      setHasMoved(true);
+      setActionLog((s) => [`You passed (Stay)`, ...s].slice(0, 10));
+    } else {
+      stopProcessing();
+    }
   };
 
   const copyRoomId = () => {
@@ -372,6 +429,27 @@ export default function Home() {
               >
                 EN
               </button>
+            </div>
+            <button
+              onClick={() => setShowHelp(true)}
+              className="ml-2 px-2 py-1 rounded-md bg-slate-50 border border-slate-100 text-slate-600 text-xs font-bold hover:bg-slate-100"
+            >
+              ?
+            </button>
+
+            {/* アクションログ（最新の行動を表示） */}
+            <div className="mt-3 px-3">
+              <div className="bg-white rounded-xl p-3 border border-slate-100 shadow-sm text-sm text-slate-600 max-h-28 overflow-auto">
+                {actionLog.length === 0 ? (
+                  <div className="text-xs text-slate-300">No actions yet</div>
+                ) : (
+                  actionLog.map((l, i) => (
+                    <div key={i} className="py-1 border-b border-slate-100 last:border-0">
+                      {l}
+                    </div>
+                  ))
+                )}
+              </div>
             </div>
 
             {joined && (
@@ -587,8 +665,9 @@ export default function Home() {
                       {isMyTurn && (
                         <button
                           onClick={handleStay}
-                          disabled={isProcessing || !isConnected}
-                          className="absolute -bottom-12 bg-slate-900 text-white text-xs font-bold px-4 py-2 rounded-full shadow-lg hover:bg-black transition-transform active:scale-95 whitespace-nowrap"
+                          disabled={isProcessing || !isConnected || !hasMoved}
+                          title={!hasMoved ? "Cannot pass as first move" : undefined}
+                          className="absolute -bottom-12 bg-slate-900 text-white text-xs font-bold px-4 py-2 rounded-full shadow-lg hover:bg-black transition-transform active:scale-95 whitespace-nowrap disabled:opacity-40"
                         >
                           {t.stay}
                         </button>
@@ -607,7 +686,7 @@ export default function Home() {
             <div className="flex flex-col items-center gap-4">
               <div className="flex gap-2 sm:gap-3 flex-wrap justify-center">
                 {gameState?.me.hand.map((card, i) => (
-                  <CardView key={i} card={card} />
+                  <CardView key={i} card={card} isOwned />
                 ))}
               </div>
               <span className="text-[10px] font-bold text-slate-300 tracking-[0.2em]">
@@ -667,6 +746,30 @@ export default function Home() {
           </div>
         </>
       )}
+
+      {/* ヘルプモーダル */}
+      {showHelp && (
+        <>
+          <div
+            className="fixed inset-0 z-40 bg-slate-900/30 backdrop-blur-[2px]"
+            onClick={() => setShowHelp(false)}
+          ></div>
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+            <div className="bg-white rounded-2xl p-6 max-w-lg w-full shadow-2xl">
+              <h3 className="text-lg font-bold mb-2">{t.helpTitle}</h3>
+              <pre className="whitespace-pre-wrap text-sm text-slate-600">{t.helpContent}</pre>
+              <div className="mt-4 flex justify-end">
+                <button
+                  onClick={() => setShowHelp(false)}
+                  className="px-4 py-2 rounded-full bg-slate-900 text-white text-sm font-bold"
+                >
+                  OK
+                </button>
+              </div>
+            </div>
+          </div>
+        </>
+      )}
     </div>
   );
 }
@@ -674,14 +777,23 @@ export default function Home() {
 function CardView({
   card,
   isOpponent,
+  isOwned,
   onClick,
 }: {
   card: Card;
   isOpponent?: boolean;
+  isOwned?: boolean;
   onClick?: () => void;
 }) {
   const isBlack = card.color === "black";
   const content = isOpponent && !card.isOpen ? "" : card.number;
+
+  const sizeArrow = (n: number | null) => {
+    if (n === null) return null;
+    // threshold: 5 -> small (<=5) left, large (>=6) right
+    if (n <= 5) return <span className="text-xs text-slate-400">← 小</span>;
+    return <span className="text-xs text-slate-400">大 →</span>;
+  };
 
   return (
     <div
@@ -702,8 +814,11 @@ function CardView({
         ${card.isOpen ? "ring-2 ring-slate-200 ring-offset-2" : ""}
       `}
     >
-      {/* 数字 */}
-      {content}
+      {/* 数字 + 補助矢印 */}
+      <div className="flex flex-col items-center">
+        <div>{content}</div>
+        <div className="mt-1">{sizeArrow(card.number)}</div>
+      </div>
 
       {/* 相手の伏せカードの柄 */}
       {isOpponent && !card.isOpen && (
@@ -721,10 +836,17 @@ function CardView({
         </div>
       )}
 
-      {/* オープン済みマーカー */}
+      {/* オープン済みマーカー (相手のカード) */}
       {card.isOpen && isOpponent && (
         <div className="absolute -top-2 -right-2 w-6 h-6 bg-slate-900 text-white flex items-center justify-center rounded-full shadow-md animate-in zoom-in border-2 border-white">
           <Check size={12} strokeWidth={4} />
+        </div>
+      )}
+
+      {/* 自分のカードが当てられたことを示すチェック（自分の手札） */}
+      {card.isOpen && isOwned && (
+        <div className="absolute -top-2 -left-2 w-5 h-5 bg-green-500 text-white flex items-center justify-center rounded-sm shadow-md animate-in zoom-in border-2 border-white">
+          <Check size={10} strokeWidth={3} />
         </div>
       )}
     </div>

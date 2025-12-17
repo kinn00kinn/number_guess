@@ -114,8 +114,12 @@ export default function GameBoard({
               <div className="absolute animate-in zoom-in duration-300 z-20">
                 <CardView card={gameState.drawnCard} />
                 {isMyTurn && (
+                  // components/GameBoard.tsx の Stayボタン部分 (確認用)
                   <button
                     onClick={onStay}
+                    // isProcessing: 通信中
+                    // !isConnected: 切断中
+                    // !hasMoved: ★まだ攻撃していない (今回の修正でターン開始時に必ずfalseになる)
                     disabled={isProcessing || !isConnected || !hasMoved}
                     className="absolute -bottom-10 left-1/2 -translate-x-1/2 bg-slate-900 text-white text-[10px] font-bold px-4 py-2 rounded-full shadow-lg hover:bg-black transition-transform active:scale-95 whitespace-nowrap disabled:opacity-50 disabled:cursor-not-allowed z-30"
                   >

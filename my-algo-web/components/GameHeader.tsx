@@ -1,4 +1,4 @@
-import { Globe, History, LogOut } from "lucide-react";
+import { Globe, History, LogOut, Hash } from "lucide-react";
 import { Lang, LogItem } from "@/types";
 
 type Props = {
@@ -22,13 +22,21 @@ export default function GameHeader({
 }: Props) {
   return (
     <header className="px-6 py-4 flex items-center justify-between bg-slate-50/90 backdrop-blur-sm sticky top-0 z-30">
-      <div className="flex items-center gap-2">
-        <h1 className="text-xl font-black tracking-tighter text-slate-900">
+      <div className="flex items-center gap-3">
+        <h1 className="text-xl font-black tracking-tighter text-slate-900 hidden sm:block">
           Algo<span className="text-slate-400">.Online</span>
         </h1>
+        {/* ★ルームIDを強調 */}
         {joined && (
-          <div className="ml-2 px-2 py-0.5 rounded bg-slate-200 text-[10px] font-bold text-slate-500 tracking-wider">
-            {roomId}
+          <div
+            className="flex items-center gap-1.5 bg-slate-900 text-white px-3 py-1.5 rounded-full shadow-sm cursor-pointer hover:bg-black transition-colors"
+            onClick={() => navigator.clipboard.writeText(roomId)}
+            title="Click to copy"
+          >
+            <Hash size={12} className="text-slate-400" />
+            <span className="text-sm font-bold font-mono tracking-wider">
+              {roomId}
+            </span>
           </div>
         )}
       </div>
@@ -37,7 +45,6 @@ export default function GameHeader({
         <button
           onClick={toggleLang}
           className="w-9 h-9 flex items-center justify-center rounded-full bg-white border border-slate-200 text-slate-600 hover:bg-slate-100 hover:text-slate-900 transition-colors shadow-sm"
-          title="Change Language"
         >
           <Globe size={16} />
         </button>

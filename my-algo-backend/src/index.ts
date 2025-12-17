@@ -143,6 +143,8 @@ export class AlgoRoom extends DurableObject {
     // 1. JOIN
     if (data.type === "JOIN") {
       if (this.state.players.length >= 2) {
+        // 再接続ロジック（簡易版）: IDが一致するプレイヤーがいれば再接続とみなす
+        // 今回はシンプルに満員エラーを返す
         ws.send(JSON.stringify({ type: "ERROR", message: "満員です" }));
         return;
       }
@@ -185,6 +187,20 @@ export class AlgoRoom extends DurableObject {
         this.broadcastState();
         return;
       }
+
+      // ★ 追加: 攻撃通知を全員（特に相手）に送る
+      // 判定処理の前に送ることで、相手の画面に「何を宣言されたか」を表示できる
+      const notifyPayload = JSON.stringify({
+        type: "ATTACK_NOTIFY",
+        attackerId: senderId,
+        targetIndex: data.targetIndex,
+        guess: data.guess,
+      });
+      this.sessions.forEach((_, clientWs) => {
+        try {
+          clientWs.send(notifyPayload);
+        } catch (e) {}
+      });
 
       const targetCard = opponent.hand[data.targetIndex];
 

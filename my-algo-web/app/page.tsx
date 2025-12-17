@@ -238,10 +238,12 @@ export default function Home() {
               data.me.hand.forEach((c: Card, idx: number) => {
                 const prevCard = prev.me.hand[idx];
                 if (prevCard && !prevCard.isOpen && c.isOpen) {
-                  setActionLog((s) => [
-                    `Your card #${idx} was revealed: ${c.number}`,
-                    ...s,
-                  ].slice(0, 10));
+                  setActionLog((s) =>
+                    [`Your card #${idx} was revealed: ${c.number}`, ...s].slice(
+                      0,
+                      10
+                    )
+                  );
                 }
               });
             }
@@ -250,10 +252,12 @@ export default function Home() {
               data.opponentHand.forEach((c: Card, idx: number) => {
                 const prevCard = prev.opponentHand[idx];
                 if (prevCard && !prevCard.isOpen && c.isOpen) {
-                  setActionLog((s) => [
-                    `Opponent card #${idx} revealed: ${c.number}`,
-                    ...s,
-                  ].slice(0, 10));
+                  setActionLog((s) =>
+                    [`Opponent card #${idx} revealed: ${c.number}`, ...s].slice(
+                      0,
+                      10
+                    )
+                  );
                 }
               });
             }
@@ -361,7 +365,9 @@ export default function Home() {
     });
     if (success) {
       setHasMoved(true);
-      setActionLog((s) => [`You attacked opponent #${targetIndex} → ${guess}`, ...s].slice(0, 10));
+      setActionLog((s) =>
+        [`You attacked opponent #${targetIndex} → ${guess}`, ...s].slice(0, 10)
+      );
     } else {
       stopProcessing();
     }
@@ -444,7 +450,10 @@ export default function Home() {
                   <div className="text-xs text-slate-300">No actions yet</div>
                 ) : (
                   actionLog.map((l, i) => (
-                    <div key={i} className="py-1 border-b border-slate-100 last:border-0">
+                    <div
+                      key={i}
+                      className="py-1 border-b border-slate-100 last:border-0"
+                    >
                       {l}
                     </div>
                   ))
@@ -666,7 +675,9 @@ export default function Home() {
                         <button
                           onClick={handleStay}
                           disabled={isProcessing || !isConnected || !hasMoved}
-                          title={!hasMoved ? "Cannot pass as first move" : undefined}
+                          title={
+                            !hasMoved ? "Cannot pass as first move" : undefined
+                          }
                           className="absolute -bottom-12 bg-slate-900 text-white text-xs font-bold px-4 py-2 rounded-full shadow-lg hover:bg-black transition-transform active:scale-95 whitespace-nowrap disabled:opacity-40"
                         >
                           {t.stay}
@@ -757,7 +768,9 @@ export default function Home() {
           <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
             <div className="bg-white rounded-2xl p-6 max-w-lg w-full shadow-2xl">
               <h3 className="text-lg font-bold mb-2">{t.helpTitle}</h3>
-              <pre className="whitespace-pre-wrap text-sm text-slate-600">{t.helpContent}</pre>
+              <pre className="whitespace-pre-wrap text-sm text-slate-600">
+                {t.helpContent}
+              </pre>
               <div className="mt-4 flex justify-end">
                 <button
                   onClick={() => setShowHelp(false)}

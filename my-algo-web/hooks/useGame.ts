@@ -109,14 +109,17 @@ export function useGame(lang: Lang) {
         setHasMoved(false);
         pingIntervalRef.current = setInterval(
           () => sendMessage({ type: "PING" }),
-          5000
+          3000
         );
       };
 
       ws.onmessage = (event) => {
         try {
           const data = JSON.parse(event.data);
-          if (data.type === "PONG") return;
+          if (data.type === "PONG") {
+            setIsConnected(true);
+            return;
+          }
 
           // ★★★ 修正ポイント: 相手からの攻撃通知を受信して表示する ★★★
           if (data.type === "ATTACK_NOTIFY") {

@@ -24,90 +24,49 @@ export function ResultModal({
   const t = TRANSLATIONS[lang];
   const isWinner = gameState.winner === gameState.me.id;
 
+  // Fix: Generate random particles once on mount using useState lazy initialization
+  const [particles] = useState(() =>
+    [...Array(20)].map(() => ({
+      left: `${Math.random() * 100}%`,
+      top: `-10%`,
+      backgroundColor: ["#ff0", "#f0f", "#0ff", "#0f0"][
+        Math.floor(Math.random() * 4)
+      ],
+      animationDuration: `${2 + Math.random() * 3}s`,
+      animationDelay: `${Math.random()}s`,
+    }))
+  );
+
   return (
-    <div className="fixed inset-0 z-[100] flex items-center justify-center p-6 bg-slate-900/60 backdrop-blur-md">
-      {/* 勝利時の背景エフェクト */}
-      {isWinner && (
-        <div className="absolute inset-0 overflow-hidden pointer-events-none">
-          <div className="absolute top-0 left-1/2 -translate-x-1/2 w-full h-full bg-[radial-gradient(circle_at_center,rgba(255,255,255,0.2)_0%,transparent_70%)] animate-pulse"></div>
-          {/* 簡易的な紙吹雪（ドット）をCSSで散らす */}
-          {[...Array(20)].map((_, i) => (
-            <div
-              key={i}
-              className="absolute w-2 h-2 rounded-full animate-bounce opacity-60"
-              style={{
-                left: `${Math.random() * 100}%`,
-                top: `-10%`,
-                backgroundColor: ["#ff0", "#f0f", "#0ff", "#0f0"][
-                  Math.floor(Math.random() * 4)
-                ],
-                animationDuration: `${2 + Math.random() * 3}s`,
-                animationDelay: `${Math.random()}s`,
-              }}
-            />
-          ))}
+    <div className="fixed inset-0 z-[100] flex items-center justify-center p-6 bg-slate-900/50 backdrop-blur-sm">
+      {/* Confetti Effect (Only show if winner) */}
+      {isWinner &&
+        particles.map((style, i) => (
+          <div
+            key={i}
+            className="absolute w-2 h-2 rounded-full animate-bounce opacity-60"
+            style={style}
+          />
+        ))}
+
+      <div className="bg-white rounded-[2rem] p-8 w-full max-w-sm text-center shadow-2xl space-y-6 animate-in zoom-in duration-300 relative z-10">
+        <div className="space-y-2">
+          <h2
+            className={`text-5xl font-black tracking-tighter ${
+              isWinner ? "text-slate-900" : "text-slate-400"
+            }`}
+          >
+            {isWinner ? t.win : t.lose}
+          </h2>
+          <p className="text-slate-500 font-medium">
+            {isWinner ? t.winMsg : t.loseMsg}
+          </p>
         </div>
-      )}
-
-      <div className="bg-white rounded-[2.5rem] p-10 w-full max-w-sm text-center shadow-2xl space-y-8 animate-in zoom-in duration-500 relative overflow-hidden">
-        {/* 勝敗バナー */}
-        <div
-          className={`absolute top-0 inset-x-0 h-2 ${
-            isWinner
-              ? "bg-gradient-to-r from-yellow-400 to-orange-500"
-              : "bg-slate-200"
-          }`}
-        ></div>
-
-        <div className="space-y-4">
-          <div className="flex justify-center">
-            {isWinner ? (
-              <div className="w-20 h-20 bg-yellow-100 rounded-full flex items-center justify-center text-5xl shadow-inner animate-bounce">
-                🏆
-              </div>
-            ) : (
-              <div className="w-20 h-20 bg-slate-100 rounded-full flex items-center justify-center text-5xl shadow-inner grayscale opacity-50">
-                💀
-              </div>
-            )}
-          </div>
-
-          <div>
-            <h2
-              className={`text-6xl font-black tracking-tighter mb-2 ${
-                isWinner
-                  ? "bg-clip-text text-transparent bg-gradient-to-br from-yellow-500 to-orange-600 drop-shadow-sm"
-                  : "text-slate-300"
-              }`}
-            >
-              {isWinner ? "WIN" : "LOSE"}
-            </h2>
-            <p className="text-slate-500 font-medium">
-              {isWinner ? t.winMsg : t.loseMsg}
-            </p>
-          </div>
-        </div>
-
-        {/* リザルト情報（簡易表示） */}
-        <div className="bg-slate-50 rounded-2xl p-4 flex justify-between items-center text-sm border border-slate-100">
-          <span className="text-slate-500 font-bold">Turns</span>
-          <span className="font-mono font-bold text-lg text-slate-800">
-            {/* 簡易的にデッキ枚数から推測、あるいは別途サーバーから送る必要あり。ここでは仮置き */}
-            -
-          </span>
-        </div>
-
         <button
           onClick={() => window.location.reload()}
-          className={`w-full font-bold py-4 rounded-2xl transition-all shadow-lg active:scale-95 flex items-center justify-center gap-2 text-lg
-            ${
-              isWinner
-                ? "bg-slate-900 text-white hover:bg-black hover:shadow-xl ring-4 ring-slate-100"
-                : "bg-slate-200 text-slate-500 hover:bg-slate-300"
-            }
-          `}
+          className="w-full bg-slate-900 text-white font-bold py-4 rounded-2xl hover:bg-black transition-all shadow-lg active:scale-95 flex items-center justify-center gap-2"
         >
-          <RotateCcw size={20} />
+          <RotateCcw size={18} />
           {t.replay}
         </button>
       </div>

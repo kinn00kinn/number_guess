@@ -8,12 +8,11 @@ import {
   ShieldAlert,
   Trophy,
 } from "lucide-react";
-import { Lang } from "@/types";
-import { TRANSLATIONS } from "@/utils/constant";
+import { Card, Lang } from "@/types";
 import CardView from "./CardView"; // 既存のCardViewを再利用
 
 // モック用のカードデータ
-const MOCK_CARDS = {
+const MOCK_CARDS: { [key: string]: Card[] } = {
   sortExample: [
     { color: "black", number: 1, isOpen: true, id: "demo-1" },
     { color: "black", number: 4, isOpen: true, id: "demo-2" },
@@ -34,7 +33,6 @@ export default function TutorialModal({
   onClose: () => void;
 }) {
   const [step, setStep] = useState(0);
-  const t = TRANSLATIONS[lang];
 
   // チュートリアルのステップ定義
   const steps = [
@@ -64,7 +62,6 @@ export default function TutorialModal({
             </p>
             {/* 実際のカードコンポーネントで可視化 */}
             <div className="flex justify-center gap-2 scale-90 origin-top">
-              {/* @ts-ignore MOCKデータのため型チェック無視 */}
               {MOCK_CARDS.sortExample.map((c, i) => (
                 <CardView key={i} card={c} isOwned={true} />
               ))}

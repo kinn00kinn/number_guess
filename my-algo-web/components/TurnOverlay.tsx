@@ -1,24 +1,21 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
 import { Lang } from "@/types";
 
-export default function TurnOverlay({
-  isMyTurn,
-  lang,
-}: {
-  isMyTurn: boolean;
-  lang: Lang;
-}) {
-  const [show, setShow] = useState(false);
+// This component renders the overlay and manages its own lifecycle.
+// It will unmount itself after a timeout.
+function TimedOverlay({ lang }: { lang: Lang }) {
+  const [show, setShow] = useState(true);
 
   useEffect(() => {
-    if (isMyTurn) {
-      setShow(true);
-      const timer = setTimeout(() => setShow(false), 2000); // 2秒後に消える
-      return () => clearTimeout(timer);
-    }
-  }, [isMyTurn]);
+    const timer = setTimeout(() => {
+      setShow(false);
+    }, 2000);
+    return () => clearTimeout(timer);
+  }, []);
 
-  if (!show) return null;
+  if (!show) {
+    return null;
+  }
 
   return (
     <div className="fixed inset-0 z-[40] flex items-center justify-center pointer-events-none">
@@ -31,4 +28,37 @@ export default function TurnOverlay({
       </div>
     </div>
   );
+}
+
+// This parent component decides WHEN to show the overlay.
+// It triggers a re-mount of TimedOverlay by changing the key.
+export default function TurnOverlay({
+  isMyTurn,
+  lang,
+}: {
+  isMyTurn: boolean;
+  lang: Lang;
+}) {
+  const [mountKey, setMountKey] = useState(0);
+  const wasMyTurn = useRef(isMyTurn);
+
+  useEffect(() => {
+    // Detect when `isMyTurn` transitions from false to true
+    if (isMyTurn && !wasMyTurn.current) {
+      // This setState call is necessary to trigger a re-mount of the timed overlay.
+      // While it causes a cascading render, the performance impact is negligible
+      // and this pattern is the cleanest way to handle a timed animation
+      // based on a prop change within the component itself.
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setMountKey((k) => k + 1);
+    }
+    wasMyTurn.current = isMyTurn;
+  }, [isMyTurn]);
+
+  // Don't render anything if it has never been our turn.
+  if (mountKey === 0) {
+    return null;
+  }
+
+  return <TimedOverlay key={mountKey} lang={lang} />;
 }

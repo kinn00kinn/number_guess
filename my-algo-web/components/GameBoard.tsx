@@ -36,7 +36,7 @@ export default function GameBoard({
   const t = TRANSLATIONS[lang];
 
   // 相手プレイヤーの特定
-  const opponent = gameState.players.find(p => p.id !== gameState.me.id);
+  const opponent = gameState.players?.find(p => p.id !== gameState.me.id);
   const opponentName = opponent?.name || "Opponent";
   const isCpu = opponentName === "CPU";
 

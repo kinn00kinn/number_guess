@@ -9,6 +9,7 @@ type Props = {
   onJoin: (id: string) => void;
   onJoinRanked: () => void;
   user: User | null;
+  isUserLoading: boolean;
   isSearching: boolean;
   onCancelSearch: () => void;
 };
@@ -20,6 +21,7 @@ export default function Lobby({
   onJoin,
   onJoinRanked,
   user,
+  isUserLoading,
   isSearching,
   onCancelSearch,
 }: Props) {
@@ -110,11 +112,19 @@ export default function Lobby({
             
             <button
               onClick={onJoinRanked}
-              disabled={isSearching}
+              disabled={isSearching || isUserLoading}
               className="w-full bg-white text-indigo-600 font-bold py-3.5 rounded-xl shadow-md hover:bg-indigo-50 transition-all active:scale-[0.98] flex items-center justify-center gap-2 relative z-10 disabled:opacity-70 disabled:cursor-not-allowed"
             >
-              <Trophy size={18} className={isSearching ? "animate-pulse" : ""} />
-              {lang === "ja" ? "対戦を開始" : "Find Match"}
+              {isUserLoading ? (
+                <Loader2 size={18} className="animate-spin" />
+              ) : (
+                <Trophy size={18} className={isSearching ? "animate-pulse" : ""} />
+              )}
+              {isUserLoading
+                ? t.nowLoading
+                : lang === "ja"
+                ? "対戦を開始"
+                : "Find Match"}
             </button>
           </div>
         ) : (
@@ -132,10 +142,19 @@ export default function Lobby({
             </div>
             <button
               onClick={handleLogin}
-              className="w-full bg-white text-slate-900 font-bold py-3.5 rounded-xl shadow-md hover:bg-slate-100 transition-all active:scale-[0.98] flex items-center justify-center gap-2"
+              disabled={isUserLoading}
+              className="w-full bg-white text-slate-900 font-bold py-3.5 rounded-xl shadow-md hover:bg-slate-100 transition-all active:scale-[0.98] flex items-center justify-center gap-2 disabled:opacity-70 disabled:cursor-not-allowed"
             >
-              <LogIn size={18} />
-              {lang === "ja" ? "ログインして参加" : "Login to Play"}
+              {isUserLoading ? (
+                <Loader2 size={18} className="animate-spin" />
+              ) : (
+                <LogIn size={18} />
+              )}
+              {isUserLoading
+                ? t.nowLoading
+                : lang === "ja"
+                ? "ログインして参加"
+                : "Login to Play"}
             </button>
           </div>
         )}
@@ -144,7 +163,8 @@ export default function Lobby({
           {/* 2. 部屋を作る */}
           <button
             onClick={handleCreateRoom}
-            className="bg-white border border-slate-200 p-4 rounded-2xl shadow-sm hover:border-indigo-300 hover:shadow-md hover:bg-indigo-50/30 transition-all group text-left flex flex-col justify-between h-32"
+            disabled={isUserLoading}
+            className="bg-white border border-slate-200 p-4 rounded-2xl shadow-sm hover:border-indigo-300 hover:shadow-md hover:bg-indigo-50/30 transition-all group text-left flex flex-col justify-between h-32 disabled:opacity-50 disabled:cursor-not-allowed"
           >
             <div className="bg-indigo-100 w-10 h-10 rounded-full flex items-center justify-center text-indigo-600 group-hover:scale-110 transition-transform">
               <Plus size={20} />
@@ -179,10 +199,11 @@ export default function Lobby({
                   value={roomId}
                   onChange={(e) => setRoomId(e.target.value)}
                   type="tel"
+                  disabled={isUserLoading}
                 />
                 <button
                   onClick={() => onJoin(roomId)}
-                  disabled={roomId.length !== 4}
+                  disabled={roomId.length !== 4 || isUserLoading}
                   className="bg-emerald-500 text-white px-2 rounded-lg hover:bg-emerald-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
                 >
                   <ArrowRight size={16} />

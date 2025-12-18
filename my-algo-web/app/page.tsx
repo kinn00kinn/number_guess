@@ -29,27 +29,36 @@ export default function Home() {
   const [showNameEdit, setShowNameEdit] = useState(false);
 
   const [user, setUser] = useState<User | null>(null);
+  const [isUserLoading, setIsUserLoading] = useState(true);
   const [ranking, setRanking] = useState<RankingItem[]>([]);
+  const [fetchUserTrigger, setFetchUserTrigger] = useState(0);
+  const refetchUser = () => setFetchUserTrigger((c) => c + 1);
 
-  // ... (fetchUser, fetchRanking, handleUpdateName, handleLogout は変更なし) ...
-  const fetchUser = useCallback(() => {
-    fetch(`${API_URL}/auth/me`, { credentials: "include" })
-      .then((res) => {
-        if (res.ok) return res.json();
-        return null;
-      })
-      .then(setUser)
-      .catch(() => setUser(null));
-  }, []);
   useEffect(() => {
-    fetchUser();
-  }, [fetchUser]);
+    const doFetchUser = async () => {
+      setIsUserLoading(true);
+      try {
+        const res = await fetch(`${API_URL}/auth/me`, {
+          credentials: "include",
+        });
+        setUser(res.ok ? await res.json() : null);
+      } catch (error) {
+        console.error("Failed to fetch user:", error);
+        setUser(null);
+      } finally {
+        setIsUserLoading(false);
+      }
+    };
+    doFetchUser();
+  }, [fetchUserTrigger]);
+
   const fetchRanking = useCallback(() => {
     fetch(`${API_URL}/ranking`)
       .then((res) => res.json())
       .then(setRanking)
       .catch(console.error);
   }, []);
+
   const handleUpdateName = async (name: string) => {
     try {
       const res = await fetch(`${API_URL}/user/name`, {
@@ -59,13 +68,14 @@ export default function Home() {
         credentials: "include",
       });
       if (res.ok) {
-        fetchUser();
+        refetchUser();
         setShowNameEdit(false);
       }
     } catch {
       alert("Error");
     }
   };
+
   const handleLogout = async () => {
     await fetch(`${API_URL}/auth/logout`, {
       method: "POST",
@@ -105,10 +115,10 @@ export default function Home() {
   useEffect(() => {
     if (gameState?.phase === "finished") {
       setTimeout(() => {
-        fetchUser();
+        refetchUser();
       }, 1000);
     }
-  }, [gameState?.phase, fetchUser]);
+  }, [gameState?.phase]);
 
   const isMyTurn = gameState?.turnPlayerId === gameState?.me.id;
 
@@ -148,9 +158,10 @@ export default function Home() {
             lang={lang}
             roomId={roomId}
             setRoomId={setRoomId}
-            onJoin={joinGame}
-            onJoinRanked={joinRanked}
+            onJoin={(id) => !isUserLoading && joinGame(id)}
+            onJoinRanked={() => !isUserLoading && joinRanked()}
             user={user}
+            isUserLoading={isUserLoading}
             isSearching={isSearching}
             onCancelSearch={cancelSearch}
           />

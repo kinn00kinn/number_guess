@@ -142,11 +142,21 @@ export class AlgoRoom extends DurableObject {
         return;
       }
 
-      // ユーザーIDの決定（認証済みならDBのIDを使いたいが、ここでは簡易IDまたは渡されたID）
-      // 本来はクエリパラメータやトークンからIDを特定すべき。
-      // 今回は既存ロジックを踏襲しつつ、CPUモードならCPUを追加。
+      // ユーザーIDの決定
       const playerId = data.userId || `User-${Math.random().toString(36).slice(-4)}`;
-      const playerName = data.userName || playerId;
+      let playerName = data.userName || playerId;
+
+      // DBから名前を取得 (userIdがUUID形式の場合のみ)
+      if (playerId.length > 20) { // 簡易チェック
+        try {
+          const user = await this.env.DB.prepare("SELECT name FROM users WHERE id = ?").bind(playerId).first<any>();
+          if (user && user.name) {
+            playerName = user.name;
+          }
+        } catch (e) {
+          // DBエラーは無視してデフォルト名を使う
+        }
+      }
 
       this.sessions.set(ws, playerId);
       

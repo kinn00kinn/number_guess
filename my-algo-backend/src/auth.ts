@@ -3,7 +3,7 @@ import { setCookie, getCookie, deleteCookie } from "hono/cookie";
 
 export const googleAuth = async (c: Context) => {
   const clientId = c.env.GOOGLE_CLIENT_ID;
-  const redirectUri = c.env.GOOGLE_REDIRECT_URI;
+  const redirectUri = c.env.GOOGLE_REDIRECT_URI || `${new URL(c.req.url).origin}/auth/callback`;
   
   const url = `https://accounts.google.com/o/oauth2/v2/auth?client_id=${clientId}&redirect_uri=${redirectUri}&response_type=code&scope=openid%20email%20profile`;
   
@@ -16,7 +16,7 @@ export const googleCallback = async (c: Context) => {
 
   const clientId = c.env.GOOGLE_CLIENT_ID;
   const clientSecret = c.env.GOOGLE_CLIENT_SECRET;
-  const redirectUri = c.env.GOOGLE_REDIRECT_URI;
+  const redirectUri = c.env.GOOGLE_REDIRECT_URI || `${new URL(c.req.url).origin}/auth/callback`;
 
   const tokenResponse = await fetch("https://oauth2.googleapis.com/token", {
     method: "POST",
@@ -53,12 +53,15 @@ export const googleCallback = async (c: Context) => {
   setCookie(c, "session_user_id", userId, {
     httpOnly: true,
     secure: isSecure,
-    sameSite: "Lax",
+    sameSite: "Lax", // クロスオリジンでのCookie送信を許可するためにLaxまたはNoneにする必要がある
     maxAge: 60 * 60 * 24 * 7,
     path: "/",
   });
 
-  return c.redirect("https://feat-online-match.my-algo-web.pages.dev/"); 
+  // フロントエンドのURLへリダイレクト
+  // 環境変数 FRONTEND_URL があればそれを使い、なければリファラーやデフォルト値を使う
+  const frontendUrl = c.env.FRONTEND_URL || "http://localhost:3000";
+  return c.redirect(frontendUrl); 
 };
 
 export const getMe = async (c: Context) => {

@@ -99,7 +99,11 @@ export const getMe = async (c: Context) => {
 };
 
 export const logout = async (c: Context) => {
-  deleteCookie(c, "session_user_id", { path: "/" });
+  deleteCookie(c, "session_user_id", {
+    path: "/",
+    secure: true,
+    sameSite: "None",
+  });
   return c.json({ success: true });
 };
 

@@ -3,7 +3,7 @@
 import { useState, useEffect } from "react";
 import { RefreshCw } from "lucide-react";
 
-import { Lang } from "@/types";
+import { Lang, User } from "@/types";
 import { TRANSLATIONS, API_URL } from "@/utils/constant";
 import { useGame } from "@/hooks/useGame";
 
@@ -21,7 +21,7 @@ export default function Home() {
   const [lang, setLang] = useState<Lang>("ja");
   const [showHistoryModal, setShowHistoryModal] = useState(false);
   const [showHelp, setShowHelp] = useState(false);
-  const [user, setUser] = useState<any>(null);
+  const [user, setUser] = useState<User | null>(null);
 
   useEffect(() => {
     fetch(`${API_URL}/auth/me`, { credentials: "include" })

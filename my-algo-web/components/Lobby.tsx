@@ -1,6 +1,6 @@
 import { ArrowRight, Trophy, LogIn } from "lucide-react";
 import { TRANSLATIONS, API_URL } from "@/utils/constant";
-import { Lang } from "@/types";
+import { Lang, User } from "@/types";
 
 type Props = {
   lang: Lang;
@@ -8,7 +8,7 @@ type Props = {
   setRoomId: (id: string) => void;
   onJoin: (id: string) => void;
   onJoinRanked: () => void;
-  user: any;
+  user: User | null;
 };
 
 export default function Lobby({ lang, roomId, setRoomId, onJoin, onJoinRanked, user }: Props) {

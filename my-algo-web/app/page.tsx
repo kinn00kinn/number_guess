@@ -1,9 +1,9 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { RefreshCw } from "lucide-react";
 
-import { Lang, User } from "@/types";
+import { Lang, User, RankingItem } from "@/types";
 import { TRANSLATIONS, API_URL } from "@/utils/constant";
 import { useGame } from "@/hooks/useGame";
 
@@ -15,15 +15,21 @@ import {
   GuessModal,
   HistoryModal,
   HelpModal,
+  RankingModal,
+  NameEditModal,
 } from "@/components/Modals";
 
 export default function Home() {
   const [lang, setLang] = useState<Lang>("ja");
   const [showHistoryModal, setShowHistoryModal] = useState(false);
   const [showHelp, setShowHelp] = useState(false);
+  const [showRanking, setShowRanking] = useState(false);
+  const [showNameEdit, setShowNameEdit] = useState(false);
+  
   const [user, setUser] = useState<User | null>(null);
+  const [ranking, setRanking] = useState<RankingItem[]>([]);
 
-  useEffect(() => {
+  const fetchUser = useCallback(() => {
     fetch(`${API_URL}/auth/me`, { credentials: "include" })
       .then((res) => {
         if (res.ok) return res.json();
@@ -32,6 +38,42 @@ export default function Home() {
       .then(setUser)
       .catch(() => setUser(null));
   }, []);
+
+  useEffect(() => {
+    fetchUser();
+  }, [fetchUser]);
+
+  const fetchRanking = useCallback(() => {
+    fetch(`${API_URL}/ranking`)
+      .then((res) => res.json())
+      .then(setRanking)
+      .catch(console.error);
+  }, []);
+
+  const handleUpdateName = async (name: string) => {
+    try {
+      const res = await fetch(`${API_URL}/user/name`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name }),
+        credentials: "include",
+      });
+      if (res.ok) {
+        fetchUser();
+        setShowNameEdit(false);
+      } else {
+        alert("Failed to update name");
+      }
+    } catch {
+      alert("Error updating name");
+    }
+  };
+
+  const handleLogout = async () => {
+    await fetch(`${API_URL}/auth/logout`, { method: "POST", credentials: "include" });
+    setUser(null);
+    window.location.reload();
+  };
 
   const t = TRANSLATIONS[lang];
   const game = useGame(lang);
@@ -57,6 +99,16 @@ export default function Home() {
     guessModalClosingRef,
   } = game;
 
+  // ゲーム終了時にユーザー情報を再取得してレート更新を反映
+  useEffect(() => {
+    if (gameState?.phase === "finished") {
+      // 少し遅延させてDB更新完了を待つ
+      setTimeout(() => {
+        fetchUser();
+      }, 1000);
+    }
+  }, [gameState?.phase, fetchUser]);
+
   const isMyTurn = gameState?.turnPlayerId === gameState?.me.id;
 
   return (
@@ -79,6 +131,12 @@ export default function Home() {
           onShowHistory={() => setShowHistoryModal(true)}
           onShowHelp={() => setShowHelp(true)}
           user={user}
+          onShowRanking={() => {
+            fetchRanking();
+            setShowRanking(true);
+          }}
+          onEditName={() => setShowNameEdit(true)}
+          onLogout={handleLogout}
         />
 
         {!joined ? (
@@ -146,6 +204,21 @@ export default function Home() {
       )}
 
       {showHelp && <HelpModal lang={lang} onClose={() => setShowHelp(false)} />}
+      
+      {showRanking && (
+        <RankingModal
+          ranking={ranking}
+          onClose={() => setShowRanking(false)}
+        />
+      )}
+
+      {showNameEdit && user && (
+        <NameEditModal
+          currentName={user.name}
+          onSave={handleUpdateName}
+          onClose={() => setShowNameEdit(false)}
+        />
+      )}
     </div>
   );
 }

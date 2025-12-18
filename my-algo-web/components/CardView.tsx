@@ -48,7 +48,9 @@ export default function CardView({
           
           ${
             isHidden
-              ? "bg-slate-800 border-slate-950 text-slate-600"
+              ? isBlack
+                ? "bg-slate-800 border-slate-950 text-slate-600"
+                : "bg-white border-slate-200 text-slate-900"
               : isBlack
               ? "bg-slate-700 border-slate-900 text-white"
               : "bg-white border-slate-200 text-slate-900"

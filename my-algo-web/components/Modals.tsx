@@ -1,6 +1,7 @@
-import { RotateCcw, X, Target, Shield, Eye, Zap, History } from "lucide-react";
+import { RotateCcw, X, Target, Shield, Eye, Zap, History, Trophy, Edit2 } from "lucide-react";
 import { TRANSLATIONS } from "@/utils/constant";
-import { Lang, GameState, LogItem } from "@/types";
+import { Lang, GameState, LogItem, RankingItem } from "@/types";
+import { useState } from "react";
 
 // ... ResultModal は変更なし ...
 export function ResultModal({
@@ -199,6 +200,91 @@ export function HelpModal({
         >
           OK
         </button>
+      </div>
+    </div>
+  );
+}
+
+export function RankingModal({
+  ranking,
+  onClose,
+}: {
+  ranking: RankingItem[];
+  onClose: () => void;
+}) {
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+      <div className="absolute inset-0 bg-slate-900/20 backdrop-blur-sm" onClick={onClose}></div>
+      <div className="bg-white rounded-2xl w-full max-w-md max-h-[80vh] flex flex-col shadow-2xl animate-in zoom-in-95 duration-200 relative z-10">
+        <div className="p-4 border-b border-slate-100 flex items-center justify-between">
+          <h3 className="font-bold text-slate-700 flex items-center gap-2">
+            <Trophy size={18} className="text-yellow-500" />
+            Top 100 Ranking
+          </h3>
+          <button onClick={onClose} className="p-1 hover:bg-slate-100 rounded-full">
+            <X size={20} className="text-slate-400" />
+          </button>
+        </div>
+        <div className="flex-1 overflow-y-auto p-0">
+          <table className="w-full text-sm text-left">
+            <thead className="text-xs text-slate-500 uppercase bg-slate-50 sticky top-0">
+              <tr>
+                <th className="px-6 py-3">Rank</th>
+                <th className="px-6 py-3">Name</th>
+                <th className="px-6 py-3 text-right">Rate</th>
+                <th className="px-6 py-3 text-right">Wins</th>
+              </tr>
+            </thead>
+            <tbody>
+              {ranking.map((item, index) => (
+                <tr key={index} className="border-b border-slate-50 hover:bg-slate-50/50">
+                  <td className="px-6 py-4 font-bold text-slate-400">#{index + 1}</td>
+                  <td className="px-6 py-4 font-medium text-slate-900">{item.name}</td>
+                  <td className="px-6 py-4 text-right font-mono font-bold text-indigo-600">{item.rate}</td>
+                  <td className="px-6 py-4 text-right text-slate-500">{item.wins}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+export function NameEditModal({
+  currentName,
+  onSave,
+  onClose,
+}: {
+  currentName: string;
+  onSave: (name: string) => void;
+  onClose: () => void;
+}) {
+  const [name, setName] = useState(currentName);
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-6">
+      <div className="absolute inset-0 bg-slate-900/30 backdrop-blur-[1px]" onClick={onClose}></div>
+      <div className="bg-white rounded-2xl p-6 max-w-sm w-full shadow-2xl relative z-10 animate-in zoom-in-95 duration-200">
+        <h3 className="text-lg font-bold mb-4 flex items-center gap-2">
+          <Edit2 size={18} /> Edit Name
+        </h3>
+        <input
+          className="w-full bg-slate-100 px-4 py-3 rounded-xl outline-none focus:ring-2 focus:ring-indigo-500/50 text-slate-800 font-bold mb-4"
+          value={name}
+          onChange={(e) => setName(e.target.value)}
+          maxLength={10}
+          placeholder="Enter your name"
+        />
+        <div className="flex gap-2">
+          <button onClick={onClose} className="flex-1 py-3 rounded-xl bg-slate-100 text-slate-500 font-bold text-sm hover:bg-slate-200">
+            Cancel
+          </button>
+          <button onClick={() => onSave(name)} className="flex-1 py-3 rounded-xl bg-slate-900 text-white font-bold text-sm hover:bg-black">
+            Save
+          </button>
+        </div>
       </div>
     </div>
   );

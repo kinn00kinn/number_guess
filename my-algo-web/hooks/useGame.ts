@@ -1,8 +1,8 @@
 import { useState, useRef, useEffect, useCallback } from "react";
-import { GameState, Card, LogItem, Lang } from "@/types";
+import { GameState, Card, LogItem, Lang, User } from "@/types";
 import { WS_URL, TRANSLATIONS } from "@/utils/constant";
 
-export function useGame(lang: Lang) {
+export function useGame(lang: Lang, user: User | null) {
   const t = TRANSLATIONS[lang];
 
   const [roomId, setRoomId] = useState("");
@@ -12,6 +12,8 @@ export function useGame(lang: Lang) {
   const [isConnected, setIsConnected] = useState(false);
   const [hasMoved, setHasMoved] = useState(false);
   const [gameLogs, setGameLogs] = useState<LogItem[]>([]);
+
+  const [isSearching, setIsSearching] = useState(false);
 
   // 直近の攻撃情報（吹き出し表示用）
   const [lastAttack, setLastAttack] = useState<{
@@ -100,19 +102,29 @@ export function useGame(lang: Lang) {
 
       ws.onopen = () => {
         setIsConnected(true);
-        sendMessage({ type: "JOIN" });
+        // URLからクエリパラメータを解析して mode: "cpu" を付与
+        const isCpu = id.includes("cpu=true");
+        sendMessage({ 
+          type: "JOIN", 
+          mode: isCpu ? "cpu" : undefined,
+          userId: user?.id,
+          userName: user?.name
+        });
         setJoined(true);
         setHasMoved(false);
         pingIntervalRef.current = setInterval(
           () => sendMessage({ type: "PING" }),
-          5000
+          3000
         );
       };
 
       ws.onmessage = (event) => {
         try {
           const data = JSON.parse(event.data);
-          if (data.type === "PONG") return;
+          if (data.type === "PONG") {
+            setIsConnected(true);
+            return;
+          }
 
           // ★★★ 修正ポイント: 相手からの攻撃通知を受信して表示する ★★★
           if (data.type === "ATTACK_NOTIFY") {
@@ -202,20 +214,65 @@ export function useGame(lang: Lang) {
         setIsConnected(false);
         stopProcessing();
         if (pingIntervalRef.current) clearInterval(pingIntervalRef.current);
+        
+        // 意図的な切断（shouldReconnectRef.current = false）でない場合のみ再接続
         if (shouldReconnectRef.current && joinedRef.current) {
+          // 再接続の頻度を少し下げる（3秒 -> 5秒）
           setTimeout(() => {
             if (shouldReconnectRef.current) {
               joinGameRef.current(id);
             }
-          }, 3000);
+          }, 5000);
         } else {
           setJoined(false);
           setGameState(null);
         }
       };
     },
-    [cleanupConnection, sendMessage, addLog, lang, t]
+    [cleanupConnection, sendMessage, addLog, lang, t, user?.id, user?.name]
   );
+
+  const joinRanked = useCallback(() => {
+    shouldReconnectRef.current = true;
+    cleanupConnection();
+    setIsSearching(true);
+
+    const ws = new WebSocket(`${WS_URL}/match/random`);
+    wsRef.current = ws;
+
+    ws.onopen = () => {
+      setIsConnected(true);
+      addLog(lang === "ja" ? "対戦相手を探しています..." : "Searching for opponent...", "system");
+    };
+
+    ws.onmessage = (event) => {
+      try {
+        const data = JSON.parse(event.data);
+        if (data.type === "MATCH_FOUND") {
+          const { roomId, mode } = data;
+          ws.close();
+          setIsSearching(false);
+          const query = mode === "cpu" ? "?cpu=true" : "";
+          joinGame(roomId + query);
+        }
+      } catch (e) {
+        console.error(e);
+      }
+    };
+    
+    ws.onclose = () => {
+      // マッチング中の切断は再接続しない（キャンセル扱い）
+      setIsConnected(false);
+      setIsSearching(false);
+    };
+  }, [cleanupConnection, joinGame, addLog, lang]);
+
+  const cancelSearch = useCallback(() => {
+    if (wsRef.current) {
+      wsRef.current.close();
+    }
+    setIsSearching(false);
+  }, []);
 
   useEffect(() => {
     joinGameRef.current = joinGame;
@@ -252,7 +309,7 @@ export function useGame(lang: Lang) {
         stopProcessing();
       }
     },
-    [guessModal, isProcessing, sendMessage, addLog, lang, t]
+    [guessModal, isProcessing, sendMessage, addLog, t]
   );
 
   const handleStay = useCallback(() => {
@@ -284,6 +341,9 @@ export function useGame(lang: Lang) {
     guessModal,
     setGuessModal,
     joinGame,
+    joinRanked,
+    cancelSearch,
+    isSearching,
     handleAttack,
     handleStay,
     guessModalClosingRef,

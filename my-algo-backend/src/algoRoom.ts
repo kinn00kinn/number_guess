@@ -45,6 +45,7 @@ export class AlgoRoom extends DurableObject {
   env: Bindings;
 
   isCpuMode: boolean = false;
+  isRanked: boolean = false;
 
   constructor(ctx: DurableObjectState, env: Bindings) {
     super(ctx, env);
@@ -66,6 +67,10 @@ export class AlgoRoom extends DurableObject {
     // CPU対戦フラグの確認
     if (url.searchParams.get("cpu") === "true") {
       this.isCpuMode = true;
+    }
+    // ランクマッチフラグの確認
+    if (url.searchParams.get("ranked") === "true") {
+      this.isRanked = true;
     }
 
     const upgradeHeader = request.headers.get("Upgrade");
@@ -366,6 +371,12 @@ export class AlgoRoom extends DurableObject {
   }
 
   async updateRatings(winnerId: string): Promise<Record<string, RatingUpdate> | null> {
+    // ランクマッチでない場合はレート更新しない
+    if (!this.isRanked) {
+      console.log("Not a ranked match. Skipping rating update.");
+      return null;
+    }
+
     const winner = this.state.players.find(p => p.id === winnerId);
     const loser = this.state.players.find(p => p.id !== winnerId);
     if (!winner || !loser) return null;

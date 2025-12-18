@@ -3,53 +3,33 @@
   "name": "my-algo-backend",
   "main": "src/index.ts",
   "compatibility_date": "2025-12-15",
-  // 1. Durable Objectのバインディング設定
   "durable_objects": {
     "bindings": [
       {
-        "name": "ALGO_ROOM",      // コード内で呼び出す時の名前 (c.env.ALGO_ROOM)
-        "class_name": "AlgoRoom"  // エクスポートするクラス名
+        "name": "ALGO_ROOM",
+        "class_name": "AlgoRoom"
+      },
+      {
+        "name": "MATCH_MAKER",
+        "class_name": "MatchMaker"
       }
     ]
   },
-
-  // 2. マイグレーション設定 (DOのデータを保存するために必須)
   "migrations": [
     {
       "tag": "v1",
       "new_sqlite_classes": ["AlgoRoom"]
+    },
+    {
+      "tag": "v2",
+      "new_sqlite_classes": ["MatchMaker"]
+    }
+  ],
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "my-algo-db",
+      "database_id": "e725297e-fb02-4c93-a6db-49a8caf25aa3"
     }
   ]
-  // "compatibility_flags": [
-  //   "nodejs_compat"
-  // ],
-  // "vars": {
-  //   "MY_VAR": "my-variable"
-  // },
-  // "kv_namespaces": [
-  //   {
-  //     "binding": "MY_KV_NAMESPACE",
-  //     "id": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
-  //   }
-  // ],
-  // "r2_buckets": [
-  //   {
-  //     "binding": "MY_BUCKET",
-  //     "bucket_name": "my-bucket"
-  //   }
-  // ],
-  // "d1_databases": [
-  //   {
-  //     "binding": "MY_DB",
-  //     "database_name": "my-database",
-  //     "database_id": ""
-  //   }
-  // ],
-  // "ai": {
-  //   "binding": "AI"
-  // },
-  // "observability": {
-  //   "enabled": true,
-  //   "head_sampling_rate": 1
-  // }
 }

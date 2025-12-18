@@ -217,6 +217,38 @@ export function useGame(lang: Lang) {
     [cleanupConnection, sendMessage, addLog, lang, t]
   );
 
+  const joinRanked = useCallback(() => {
+    shouldReconnectRef.current = true;
+    cleanupConnection();
+
+    const ws = new WebSocket(`${WS_URL}/match/random`);
+    wsRef.current = ws;
+
+    ws.onopen = () => {
+      setIsConnected(true);
+      addLog(lang === "ja" ? "対戦相手を探しています..." : "Searching for opponent...", "system");
+    };
+
+    ws.onmessage = (event) => {
+      try {
+        const data = JSON.parse(event.data);
+        if (data.type === "MATCH_FOUND") {
+          const { roomId, mode } = data;
+          ws.close();
+          const query = mode === "cpu" ? "?cpu=true" : "";
+          joinGame(roomId + query);
+        }
+      } catch (e) {
+        console.error(e);
+      }
+    };
+    
+    ws.onclose = () => {
+      // マッチング中の切断は再接続しない（キャンセル扱い）
+      setIsConnected(false);
+    };
+  }, [cleanupConnection, joinGame, addLog, lang]);
+
   useEffect(() => {
     joinGameRef.current = joinGame;
   }, [joinGame]);
@@ -284,6 +316,7 @@ export function useGame(lang: Lang) {
     guessModal,
     setGuessModal,
     joinGame,
+    joinRanked,
     handleAttack,
     handleStay,
     guessModalClosingRef,

@@ -1,10 +1,10 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { RefreshCw } from "lucide-react";
 
 import { Lang } from "@/types";
-import { TRANSLATIONS } from "@/utils/constant";
+import { TRANSLATIONS, API_URL } from "@/utils/constant";
 import { useGame } from "@/hooks/useGame";
 
 import GameHeader from "@/components/GameHeader";
@@ -21,6 +21,17 @@ export default function Home() {
   const [lang, setLang] = useState<Lang>("ja");
   const [showHistoryModal, setShowHistoryModal] = useState(false);
   const [showHelp, setShowHelp] = useState(false);
+  const [user, setUser] = useState<any>(null);
+
+  useEffect(() => {
+    fetch(`${API_URL}/auth/me`, { credentials: "include" })
+      .then((res) => {
+        if (res.ok) return res.json();
+        return null;
+      })
+      .then(setUser)
+      .catch(() => setUser(null));
+  }, []);
 
   const t = TRANSLATIONS[lang];
   const game = useGame(lang);
@@ -34,10 +45,11 @@ export default function Home() {
     isConnected,
     hasMoved,
     gameLogs,
-    lastAttack, // ★ここを受け取る
+    lastAttack,
     guessModal,
     setGuessModal,
     joinGame,
+    joinRanked,
     handleAttack,
     handleStay,
     guessModalClosingRef,
@@ -72,6 +84,8 @@ export default function Home() {
             roomId={roomId}
             setRoomId={setRoomId}
             onJoin={joinGame}
+            onJoinRanked={joinRanked}
+            user={user}
           />
         ) : (
           gameState && (
@@ -87,7 +101,7 @@ export default function Home() {
                 isConnected={isConnected}
                 hasMoved={hasMoved}
                 gameLogs={gameLogs}
-                lastAttack={lastAttack} // ★ここを渡すことでエラーが解消されます
+                lastAttack={lastAttack}
                 onStay={handleStay}
                 onCardClick={(index) => {
                   if (guessModalClosingRef.current) return;

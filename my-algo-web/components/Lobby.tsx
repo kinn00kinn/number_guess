@@ -1,4 +1,4 @@
-import { ArrowRight } from "lucide-react";
+import { ArrowRight, Trophy, LogIn } from "lucide-react";
 import { TRANSLATIONS, API_URL } from "@/utils/constant";
 import { Lang } from "@/types";
 
@@ -7,9 +7,11 @@ type Props = {
   roomId: string;
   setRoomId: (id: string) => void;
   onJoin: (id: string) => void;
+  onJoinRanked: () => void;
+  user: any;
 };
 
-export default function Lobby({ lang, roomId, setRoomId, onJoin }: Props) {
+export default function Lobby({ lang, roomId, setRoomId, onJoin, onJoinRanked, user }: Props) {
   const t = TRANSLATIONS[lang];
 
   const handleCreateRoom = async () => {
@@ -21,6 +23,10 @@ export default function Lobby({ lang, roomId, setRoomId, onJoin }: Props) {
     } catch {
       alert("Error creating room");
     }
+  };
+
+  const handleLogin = () => {
+    window.location.href = `${API_URL}/auth/google`;
   };
 
   return (
@@ -35,6 +41,47 @@ export default function Lobby({ lang, roomId, setRoomId, onJoin }: Props) {
       </div>
 
       <div className="w-full max-w-sm space-y-6 animate-in fade-in slide-in-from-bottom-8 duration-1000 delay-100">
+        
+        {/* ランクマッチ / ログイン */}
+        {user ? (
+          <div className="bg-gradient-to-br from-indigo-500 to-purple-600 rounded-3xl p-6 text-white shadow-xl shadow-indigo-200">
+            <div className="flex items-center justify-between mb-4">
+              <div>
+                <p className="text-indigo-100 text-xs font-bold uppercase tracking-wider">Player</p>
+                <p className="font-bold text-lg">{user.name}</p>
+              </div>
+              <div className="text-right">
+                <p className="text-indigo-100 text-xs font-bold uppercase tracking-wider">Rate</p>
+                <p className="font-bold text-2xl">{user.rate}</p>
+              </div>
+            </div>
+            <button
+              onClick={onJoinRanked}
+              className="w-full bg-white text-indigo-600 font-bold py-4 rounded-2xl shadow-lg hover:bg-indigo-50 transition-all active:scale-[0.98] flex items-center justify-center gap-2"
+            >
+              <Trophy size={20} />
+              {lang === "ja" ? "レート対戦" : "Ranked Match"}
+            </button>
+          </div>
+        ) : (
+          <button
+            onClick={handleLogin}
+            className="w-full bg-white border-2 border-slate-200 text-slate-600 font-bold py-4 rounded-2xl hover:bg-slate-50 transition-all active:scale-[0.98] flex items-center justify-center gap-2"
+          >
+            <LogIn size={20} />
+            {lang === "ja" ? "Googleでログインして対戦" : "Login to Play Ranked"}
+          </button>
+        )}
+
+        <div className="relative py-2">
+          <div className="absolute inset-0 flex items-center">
+            <div className="w-full border-t border-slate-200"></div>
+          </div>
+          <div className="relative flex justify-center text-xs font-bold uppercase tracking-widest text-slate-400">
+            <span className="px-4 bg-slate-50">Free Match</span>
+          </div>
+        </div>
+
         <div className="bg-white rounded-3xl p-2 shadow-xl shadow-slate-200/50 border border-slate-100">
           <input
             className="w-full bg-transparent px-6 py-5 text-4xl font-mono font-bold text-center tracking-[0.3em] outline-none text-slate-800 placeholder:text-slate-200"
@@ -52,15 +99,6 @@ export default function Lobby({ lang, roomId, setRoomId, onJoin }: Props) {
           </button>
         </div>
 
-        <div className="relative py-2">
-          <div className="absolute inset-0 flex items-center">
-            <div className="w-full border-t border-slate-200"></div>
-          </div>
-          <div className="relative flex justify-center text-xs font-bold uppercase tracking-widest text-slate-400">
-            <span className="px-4 bg-slate-50">{t.or}</span>
-          </div>
-        </div>
-
         <button
           onClick={handleCreateRoom}
           className="w-full bg-white border-2 border-slate-100 text-slate-900 font-bold py-4 rounded-2xl hover:border-slate-300 hover:bg-slate-50 transition-all active:scale-[0.98]"
@@ -71,3 +109,4 @@ export default function Lobby({ lang, roomId, setRoomId, onJoin }: Props) {
     </main>
   );
 }
+

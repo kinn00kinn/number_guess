@@ -364,79 +364,63 @@ export class AlgoRoom extends DurableObject {
 
     console.log(`updateRatings called. Winner: ${winner.id}, Loser: ${loser.id}`);
 
-    // CPU戦の場合
-    if (winner.isCpu || loser.isCpu) {
-      console.log("CPU Match branch");
-      // プレイヤーが勝った場合のみレートを少し上げる
-      if (!winner.isCpu) {
-        try {
-          const before = await this.env.DB.prepare("SELECT rate FROM users WHERE id = ?").bind(winner.id).first<any>();
-          const currentRate = before?.rate || 1500;
-          const newRate = currentRate + 10;
-
-          await this.env.DB.prepare("UPDATE users SET rate = ?, wins = wins + 1, matches = matches + 1 WHERE id = ?").bind(newRate, winner.id).run();
-
-          return {
-            [winner.id]: { old: currentRate, new: newRate, diff: 10 }
-          };
-        } catch (e) {
-          console.error("Error updating CPU win:", e);
-          return null;
-        }
-      } else if (!loser.isCpu) {
-        // プレイヤーが負けた場合
-        try {
-          const before = await this.env.DB.prepare("SELECT rate FROM users WHERE id = ?").bind(loser.id).first<any>();
-          const currentRate = before?.rate || 1500;
-
-          await this.env.DB.prepare("UPDATE users SET matches = matches + 1 WHERE id = ?").bind(loser.id).run();
-          
-          return {
-            [loser.id]: { old: currentRate, new: currentRate, diff: 0 }
-          };
-        } catch (e) {
-          console.error("Error updating CPU loss:", e);
-          return null;
-        }
+    // Helper to get rate safely
+    const getRate = async (id: string) => {
+      try {
+        const user = await this.env.DB.prepare("SELECT rate FROM users WHERE id = ?").bind(id).first<any>();
+        return user?.rate ?? 1500;
+      } catch (e) {
+        return 1500;
       }
-      return null;
+    };
+
+    // CPU Match
+    if (winner.isCpu || loser.isCpu) {
+      const isPlayerWinner = !winner.isCpu;
+      const player = isPlayerWinner ? winner : loser;
+      
+      const currentRate = await getRate(player.id);
+      // Win: +10, Lose: -10
+      const diff = isPlayerWinner ? 10 : -10;
+      const newRate = Math.max(0, currentRate + diff);
+
+      try {
+        await this.env.DB.prepare(
+          `UPDATE users SET rate = ?, ${isPlayerWinner ? "wins = wins + 1, " : ""}matches = matches + 1 WHERE id = ?`
+        ).bind(newRate, player.id).run();
+      } catch (e) {
+        console.error("Error updating CPU match rate:", e);
+      }
+
+      return {
+        [player.id]: { old: currentRate, new: newRate, diff }
+      };
     }
 
+    // PvP Match
+    const rw = await getRate(winner.id);
+    const rl = await getRate(loser.id);
+    const K = 32;
+
+    const ew = 1 / (1 + Math.pow(10, (rl - rw) / 400));
+    const el = 1 / (1 + Math.pow(10, (rw - rl) / 400));
+
+    const newRw = Math.round(rw + K * (1 - ew));
+    const newRl = Math.round(rl + K * (0 - el));
+
     try {
-      // DBから現在のレートを取得
-      const winnerData = await this.env.DB.prepare("SELECT * FROM users WHERE id = ?").bind(winner.id).first<any>();
-      const loserData = await this.env.DB.prepare("SELECT * FROM users WHERE id = ?").bind(loser.id).first<any>();
-
-      if (!winnerData || !loserData) {
-        console.log("User data not found for PvP rating update");
-        return null;
-      }
-
-      const Rw = winnerData.rate || 1500;
-      const Rl = loserData.rate || 1500;
-      const K = 32;
-
-      const Ew = 1 / (1 + Math.pow(10, (Rl - Rw) / 400));
-      const El = 1 / (1 + Math.pow(10, (Rw - Rl) / 400));
-
-      const newRw = Math.round(Rw + K * (1 - Ew));
-      const newRl = Math.round(Rl + K * (0 - El));
-
-      console.log(`[PvP] Update: Winner ${Rw} -> ${newRw}, Loser ${Rl} -> ${newRl}`);
-
       await this.env.DB.batch([
         this.env.DB.prepare("UPDATE users SET rate = ?, wins = wins + 1, matches = matches + 1 WHERE id = ?").bind(newRw, winner.id),
         this.env.DB.prepare("UPDATE users SET rate = ?, matches = matches + 1 WHERE id = ?").bind(newRl, loser.id)
       ]);
-      
-      return {
-        [winner.id]: { old: Rw, new: newRw, diff: newRw - Rw },
-        [loser.id]: { old: Rl, new: newRl, diff: newRl - Rl }
-      };
     } catch (e) {
-      console.error("[PvP] Error updating ratings:", e);
-      return null;
+      console.error("Error updating PvP match rates:", e);
     }
+
+    return {
+      [winner.id]: { old: rw, new: newRw, diff: newRw - rw },
+      [loser.id]: { old: rl, new: newRl, diff: newRl - rl }
+    };
   }
 
   // --- CPU Logic ---

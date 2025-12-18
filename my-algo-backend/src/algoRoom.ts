@@ -110,6 +110,7 @@ export class AlgoRoom extends DurableObject {
         phase: this.state.phase,
         turnPlayerId: this.state.turnPlayerId,
         me: myData,
+        players: this.state.players, // 追加
         opponentHand: opponentHandMasked,
         drawnCard: drawnCardMasked,
         winner: this.state.winner,

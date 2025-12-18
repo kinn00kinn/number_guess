@@ -7,6 +7,7 @@ export type Card = {
 
 export type Player = {
   id: string;
+  name?: string; // 追加
   hand: Card[];
 };
 
@@ -14,6 +15,7 @@ export type GameState = {
   phase: string;
   turnPlayerId: string | null;
   me: Player;
+  players: Player[]; // 追加
   opponentHand: Card[];
   drawnCard: Card | null;
   winner: string | null;

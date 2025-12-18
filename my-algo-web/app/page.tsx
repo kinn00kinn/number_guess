@@ -76,7 +76,7 @@ export default function Home() {
   };
 
   const t = TRANSLATIONS[lang];
-  const game = useGame(lang);
+  const game = useGame(lang, user);
 
   const {
     roomId,

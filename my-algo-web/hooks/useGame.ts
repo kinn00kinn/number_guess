@@ -1,8 +1,8 @@
 import { useState, useRef, useEffect, useCallback } from "react";
-import { GameState, Card, LogItem, Lang } from "@/types";
+import { GameState, Card, LogItem, Lang, User } from "@/types";
 import { WS_URL, TRANSLATIONS } from "@/utils/constant";
 
-export function useGame(lang: Lang) {
+export function useGame(lang: Lang, user: User | null) {
   const t = TRANSLATIONS[lang];
 
   const [roomId, setRoomId] = useState("");
@@ -104,7 +104,12 @@ export function useGame(lang: Lang) {
         setIsConnected(true);
         // URLからクエリパラメータを解析して mode: "cpu" を付与
         const isCpu = id.includes("cpu=true");
-        sendMessage({ type: "JOIN", mode: isCpu ? "cpu" : undefined });
+        sendMessage({ 
+          type: "JOIN", 
+          mode: isCpu ? "cpu" : undefined,
+          userId: user?.id,
+          userName: user?.name
+        });
         setJoined(true);
         setHasMoved(false);
         pingIntervalRef.current = setInterval(
@@ -224,7 +229,7 @@ export function useGame(lang: Lang) {
         }
       };
     },
-    [cleanupConnection, sendMessage, addLog, lang, t]
+    [cleanupConnection, sendMessage, addLog, lang, t, user?.id, user?.name]
   );
 
   const joinRanked = useCallback(() => {
@@ -304,7 +309,7 @@ export function useGame(lang: Lang) {
         stopProcessing();
       }
     },
-    [guessModal, isProcessing, sendMessage, addLog, lang, t]
+    [guessModal, isProcessing, sendMessage, addLog, t]
   );
 
   const handleStay = useCallback(() => {

@@ -3,7 +3,7 @@ import { setCookie, getCookie, deleteCookie } from "hono/cookie";
 
 export const googleAuth = async (c: Context) => {
   const clientId = c.env.GOOGLE_CLIENT_ID;
-  const redirectUri = c.env.GOOGLE_REDIRECT_URI || "http://localhost:8787/auth/callback";
+  const redirectUri = c.env.GOOGLE_REDIRECT_URI;
   
   const url = `https://accounts.google.com/o/oauth2/v2/auth?client_id=${clientId}&redirect_uri=${redirectUri}&response_type=code&scope=openid%20email%20profile`;
   
@@ -16,7 +16,7 @@ export const googleCallback = async (c: Context) => {
 
   const clientId = c.env.GOOGLE_CLIENT_ID;
   const clientSecret = c.env.GOOGLE_CLIENT_SECRET;
-  const redirectUri = c.env.GOOGLE_REDIRECT_URI || "http://localhost:8787/auth/callback";
+  const redirectUri = c.env.GOOGLE_REDIRECT_URI;
 
   const tokenResponse = await fetch("https://oauth2.googleapis.com/token", {
     method: "POST",
@@ -58,7 +58,7 @@ export const googleCallback = async (c: Context) => {
     path: "/",
   });
 
-  return c.redirect("http://localhost:3000/"); 
+  return c.redirect("https://feat-online-match.my-algo-web.pages.dev/"); 
 };
 
 export const getMe = async (c: Context) => {

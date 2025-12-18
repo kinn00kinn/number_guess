@@ -60,7 +60,7 @@ export const googleCallback = async (c: Context) => {
 
   // フロントエンドのURLへリダイレクト
   // 環境変数 FRONTEND_URL があればそれを使い、なければリファラーやデフォルト値を使う
-  const frontendUrl = c.env.FRONTEND_URL || "http://localhost:3000";
+  const frontendUrl = c.env.FRONTEND_URL;
   return c.redirect(frontendUrl); 
 };
 

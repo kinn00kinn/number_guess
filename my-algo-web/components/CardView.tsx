@@ -1,5 +1,7 @@
+// components/CardView.tsx
 import { Card } from "@/types";
 import { Check, Lock } from "lucide-react";
+import React from "react"; // 追加
 
 type Props = {
   card: Card;
@@ -7,10 +9,11 @@ type Props = {
   isOwned?: boolean;
   onClick?: () => void;
   disabled?: boolean;
-  guessedNumber?: number | null; // ★追加: このカードに対して宣言された数字
+  guessedNumber?: number | null;
 };
 
-export default function CardView({
+// React.memo でラップして不要な再レンダリングを防ぐ
+const CardView = React.memo(function CardView({
   card,
   isOpponent,
   isOwned,
@@ -26,7 +29,6 @@ export default function CardView({
 
   return (
     <div className="relative group">
-      {/* ★追加: 宣言された数字の吹き出し */}
       {guessedNumber !== null && guessedNumber !== undefined && (
         <div className="absolute -top-8 left-1/2 -translate-x-1/2 bg-rose-500 text-white text-xs font-bold px-2 py-1 rounded-lg shadow-lg z-20 animate-in zoom-in slide-in-from-bottom-2 whitespace-nowrap">
           <div className="absolute bottom-0 left-1/2 -translate-x-1/2 translate-y-1/2 rotate-45 w-2 h-2 bg-rose-500"></div>
@@ -58,7 +60,6 @@ export default function CardView({
 
           ${isOpen ? "opacity-100 ring-2 ring-green-400 ring-offset-2" : ""}
           
-          /* 攻撃対象になっている場合のアニメーション */
           ${
             guessedNumber !== null && guessedNumber !== undefined
               ? "ring-2 ring-rose-400 ring-offset-2 scale-105"
@@ -88,4 +89,6 @@ export default function CardView({
       </button>
     </div>
   );
-}
+});
+
+export default CardView;

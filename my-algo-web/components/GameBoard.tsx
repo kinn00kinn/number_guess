@@ -2,7 +2,8 @@ import { GameState, Lang, LogItem } from "@/types";
 import { TRANSLATIONS } from "@/utils/constant";
 import CardView from "./CardView";
 import SortIndicator from "./SortIndicator";
-import { User as UserIcon, Cpu } from "lucide-react";
+import { User as UserIcon, Cpu, Loader2, WifiOff } from "lucide-react";
+import { ToastContainer, ToastItem } from "./Toast";
 
 type Props = {
   lang: Lang;
@@ -10,6 +11,7 @@ type Props = {
   isMyTurn: boolean;
   isProcessing: boolean;
   isConnected: boolean;
+  isReconnecting: boolean; // ★追加
   hasMoved: boolean;
   gameLogs: LogItem[];
   lastAttack: {
@@ -19,6 +21,8 @@ type Props = {
   } | null;
   onCardClick: (index: number) => void;
   onStay: () => void;
+  toasts: ToastItem[]; // ★追加
+  removeToast: (id: string) => void; // ★追加
 };
 
 export default function GameBoard({
@@ -27,30 +31,61 @@ export default function GameBoard({
   isMyTurn,
   isProcessing,
   isConnected,
+  isReconnecting, // ★追加
   hasMoved,
   gameLogs,
   lastAttack,
   onCardClick,
   onStay,
+  toasts, // ★追加
+  removeToast, // ★追加
 }: Props) {
   const t = TRANSLATIONS[lang];
 
   // 相手プレイヤーの特定
-  const opponent = gameState.players?.find(p => p.id !== gameState.me.id);
+  const opponent = gameState.players?.find((p) => p.id !== gameState.me.id);
   const opponentName = opponent?.name || "Opponent";
   const isCpu = opponentName === "CPU";
 
   return (
     <main className="flex-1 flex flex-col justify-between py-4 relative overflow-hidden">
+      {/* ★追加: Toast Container (最前面に表示) */}
+      <ToastContainer toasts={toasts} removeToast={removeToast} />
+
+      {/* ★追加: 再接続オーバーレイ */}
+      {isReconnecting && (
+        <div className="absolute inset-0 z-[60] bg-slate-900/60 backdrop-blur-sm flex items-center justify-center animate-in fade-in">
+          <div className="bg-white rounded-2xl p-6 shadow-2xl flex flex-col items-center gap-4">
+            <div className="relative">
+              <div className="absolute inset-0 bg-amber-500 rounded-full animate-ping opacity-20"></div>
+              <div className="bg-amber-50 p-3 rounded-full">
+                <WifiOff className="text-amber-500" size={24} />
+              </div>
+            </div>
+            <div className="text-center">
+              <h3 className="font-bold text-slate-800">Connection Lost</h3>
+              <p className="text-xs text-slate-500 font-bold flex items-center gap-1 mt-1">
+                <Loader2 size={12} className="animate-spin" />
+                Reconnecting...
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* 1. 相手の手札エリア */}
       <div className="flex-1 flex flex-col justify-end items-center pb-2 relative">
         <div className="flex items-center gap-2 mb-3 bg-white/80 backdrop-blur-sm px-3 py-1 rounded-full border border-slate-100 shadow-sm">
-          {isCpu ? <Cpu size={14} className="text-slate-500" /> : <UserIcon size={14} className="text-slate-500" />}
+          {isCpu ? (
+            <Cpu size={14} className="text-slate-500" />
+          ) : (
+            <UserIcon size={14} className="text-slate-500" />
+          )}
           <span className="text-xs font-bold text-slate-700 max-w-[120px] truncate">
             {opponentName}
           </span>
         </div>
-        
+
         <div className="w-full px-4">
           <div className="flex gap-2 sm:gap-4 flex-wrap justify-center">
             {gameState.opponentHand.map((card, i) => (
@@ -129,7 +164,7 @@ export default function GameBoard({
             )}
           </div>
 
-          {/* ★Stayボタン: 独立した場所に配置 */}
+          {/* Stayボタン */}
           <div className="w-16 h-16 flex items-center justify-center">
             {isMyTurn && (
               <button

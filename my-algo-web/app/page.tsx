@@ -10,11 +10,13 @@ import { useGame } from "@/hooks/useGame";
 import GameHeader from "@/components/GameHeader";
 import Lobby from "@/components/Lobby";
 import GameBoard from "@/components/GameBoard";
+import TurnOverlay from "@/components/TurnOverlay"; // ★ 追加
+import TutorialModal from "@/components/TutorialModal"; // ★ 追加
 import {
   ResultModal,
   GuessModal,
   HistoryModal,
-  HelpModal,
+  // HelpModal, // ← 廃止 (TutorialModalに置き換え)
   RankingModal,
   NameEditModal,
 } from "@/components/Modals";
@@ -22,13 +24,14 @@ import {
 export default function Home() {
   const [lang, setLang] = useState<Lang>("ja");
   const [showHistoryModal, setShowHistoryModal] = useState(false);
-  const [showHelp, setShowHelp] = useState(false);
+  const [showTutorial, setShowTutorial] = useState(false); // ★ Help -> Tutorial に変更
   const [showRanking, setShowRanking] = useState(false);
   const [showNameEdit, setShowNameEdit] = useState(false);
-  
+
   const [user, setUser] = useState<User | null>(null);
   const [ranking, setRanking] = useState<RankingItem[]>([]);
 
+  // ... (fetchUser, fetchRanking, handleUpdateName, handleLogout は変更なし) ...
   const fetchUser = useCallback(() => {
     fetch(`${API_URL}/auth/me`, { credentials: "include" })
       .then((res) => {
@@ -38,18 +41,15 @@ export default function Home() {
       .then(setUser)
       .catch(() => setUser(null));
   }, []);
-
   useEffect(() => {
     fetchUser();
   }, [fetchUser]);
-
   const fetchRanking = useCallback(() => {
     fetch(`${API_URL}/ranking`)
       .then((res) => res.json())
       .then(setRanking)
       .catch(console.error);
   }, []);
-
   const handleUpdateName = async (name: string) => {
     try {
       const res = await fetch(`${API_URL}/user/name`, {
@@ -61,23 +61,25 @@ export default function Home() {
       if (res.ok) {
         fetchUser();
         setShowNameEdit(false);
-      } else {
-        alert("Failed to update name");
       }
     } catch {
-      alert("Error updating name");
+      alert("Error");
     }
   };
-
   const handleLogout = async () => {
-    await fetch(`${API_URL}/auth/logout`, { method: "POST", credentials: "include" });
+    await fetch(`${API_URL}/auth/logout`, {
+      method: "POST",
+      credentials: "include",
+    });
     setUser(null);
     window.location.reload();
   };
+  // ... (ここまで変更なし) ...
 
   const t = TRANSLATIONS[lang];
   const game = useGame(lang, user);
 
+  // 分割代入
   const {
     roomId,
     setRoomId,
@@ -99,10 +101,9 @@ export default function Home() {
     guessModalClosingRef,
   } = game;
 
-  // ゲーム終了時にユーザー情報を再取得してレート更新を反映
+  // レート更新確認
   useEffect(() => {
     if (gameState?.phase === "finished") {
-      // 少し遅延させてDB更新完了を待つ
       setTimeout(() => {
         fetchUser();
       }, 1000);
@@ -113,7 +114,9 @@ export default function Home() {
 
   return (
     <div className="min-h-screen bg-slate-50 text-slate-800 font-sans pb-safe selection:bg-slate-200">
-      {/* 接続切れアラート */}
+      {/* ★ ターン開始時のカットイン演出 */}
+      {joined && gameState && <TurnOverlay isMyTurn={isMyTurn} lang={lang} />}
+
       {joined && !isConnected && (
         <div className="fixed top-16 inset-x-0 bg-rose-500 text-white text-center py-2 z-[90] font-bold shadow-md flex items-center justify-center gap-2 text-sm animate-in slide-in-from-top">
           <RefreshCw size={14} className="animate-spin" />
@@ -129,7 +132,8 @@ export default function Home() {
           roomId={roomId}
           gameLogs={gameLogs}
           onShowHistory={() => setShowHistoryModal(true)}
-          onShowHelp={() => setShowHelp(true)}
+          // ★ Helpボタンを押すとチュートリアルが開くように変更
+          onShowHelp={() => setShowTutorial(true)}
           user={user}
           onShowRanking={() => {
             fetchRanking();
@@ -184,7 +188,7 @@ export default function Home() {
         )}
       </div>
 
-      {/* --- モーダル --- */}
+      {/* --- モーダル群 --- */}
       {guessModal.show && (
         <GuessModal
           lang={lang}
@@ -203,13 +207,13 @@ export default function Home() {
         />
       )}
 
-      {showHelp && <HelpModal lang={lang} onClose={() => setShowHelp(false)} />}
-      
+      {/* ★ HelpModalの代わりにTutorialModalを表示 */}
+      {showTutorial && (
+        <TutorialModal lang={lang} onClose={() => setShowTutorial(false)} />
+      )}
+
       {showRanking && (
-        <RankingModal
-          ranking={ranking}
-          onClose={() => setShowRanking(false)}
-        />
+        <RankingModal ranking={ranking} onClose={() => setShowRanking(false)} />
       )}
 
       {showNameEdit && user && (

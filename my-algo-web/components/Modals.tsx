@@ -1,4 +1,14 @@
-import { RotateCcw, X, Target, Shield, Eye, Zap, History, Trophy, Edit2 } from "lucide-react";
+import {
+  RotateCcw,
+  X,
+  Target,
+  Shield,
+  Eye,
+  Zap,
+  History,
+  Trophy,
+  Edit2,
+} from "lucide-react";
 import { TRANSLATIONS } from "@/utils/constant";
 import { Lang, GameState, LogItem, RankingItem } from "@/types";
 import { useState } from "react";
@@ -15,25 +25,89 @@ export function ResultModal({
   const isWinner = gameState.winner === gameState.me.id;
 
   return (
-    <div className="fixed inset-0 z-[100] flex items-center justify-center p-6 bg-slate-900/50 backdrop-blur-sm">
-      <div className="bg-white rounded-[2rem] p-8 w-full max-w-sm text-center shadow-2xl space-y-6 animate-in zoom-in duration-300">
-        <div className="space-y-2">
-          <h2
-            className={`text-5xl font-black tracking-tighter ${
-              isWinner ? "text-slate-900" : "text-slate-400"
-            }`}
-          >
-            {isWinner ? t.win : t.lose}
-          </h2>
-          <p className="text-slate-500 font-medium">
-            {isWinner ? t.winMsg : t.loseMsg}
-          </p>
+    <div className="fixed inset-0 z-[100] flex items-center justify-center p-6 bg-slate-900/60 backdrop-blur-md">
+      {/* 勝利時の背景エフェクト */}
+      {isWinner && (
+        <div className="absolute inset-0 overflow-hidden pointer-events-none">
+          <div className="absolute top-0 left-1/2 -translate-x-1/2 w-full h-full bg-[radial-gradient(circle_at_center,rgba(255,255,255,0.2)_0%,transparent_70%)] animate-pulse"></div>
+          {/* 簡易的な紙吹雪（ドット）をCSSで散らす */}
+          {[...Array(20)].map((_, i) => (
+            <div
+              key={i}
+              className="absolute w-2 h-2 rounded-full animate-bounce opacity-60"
+              style={{
+                left: `${Math.random() * 100}%`,
+                top: `-10%`,
+                backgroundColor: ["#ff0", "#f0f", "#0ff", "#0f0"][
+                  Math.floor(Math.random() * 4)
+                ],
+                animationDuration: `${2 + Math.random() * 3}s`,
+                animationDelay: `${Math.random()}s`,
+              }}
+            />
+          ))}
         </div>
+      )}
+
+      <div className="bg-white rounded-[2.5rem] p-10 w-full max-w-sm text-center shadow-2xl space-y-8 animate-in zoom-in duration-500 relative overflow-hidden">
+        {/* 勝敗バナー */}
+        <div
+          className={`absolute top-0 inset-x-0 h-2 ${
+            isWinner
+              ? "bg-gradient-to-r from-yellow-400 to-orange-500"
+              : "bg-slate-200"
+          }`}
+        ></div>
+
+        <div className="space-y-4">
+          <div className="flex justify-center">
+            {isWinner ? (
+              <div className="w-20 h-20 bg-yellow-100 rounded-full flex items-center justify-center text-5xl shadow-inner animate-bounce">
+                🏆
+              </div>
+            ) : (
+              <div className="w-20 h-20 bg-slate-100 rounded-full flex items-center justify-center text-5xl shadow-inner grayscale opacity-50">
+                💀
+              </div>
+            )}
+          </div>
+
+          <div>
+            <h2
+              className={`text-6xl font-black tracking-tighter mb-2 ${
+                isWinner
+                  ? "bg-clip-text text-transparent bg-gradient-to-br from-yellow-500 to-orange-600 drop-shadow-sm"
+                  : "text-slate-300"
+              }`}
+            >
+              {isWinner ? "WIN" : "LOSE"}
+            </h2>
+            <p className="text-slate-500 font-medium">
+              {isWinner ? t.winMsg : t.loseMsg}
+            </p>
+          </div>
+        </div>
+
+        {/* リザルト情報（簡易表示） */}
+        <div className="bg-slate-50 rounded-2xl p-4 flex justify-between items-center text-sm border border-slate-100">
+          <span className="text-slate-500 font-bold">Turns</span>
+          <span className="font-mono font-bold text-lg text-slate-800">
+            {/* 簡易的にデッキ枚数から推測、あるいは別途サーバーから送る必要あり。ここでは仮置き */}
+            -
+          </span>
+        </div>
+
         <button
           onClick={() => window.location.reload()}
-          className="w-full bg-slate-900 text-white font-bold py-4 rounded-2xl hover:bg-black transition-all shadow-lg active:scale-95 flex items-center justify-center gap-2"
+          className={`w-full font-bold py-4 rounded-2xl transition-all shadow-lg active:scale-95 flex items-center justify-center gap-2 text-lg
+            ${
+              isWinner
+                ? "bg-slate-900 text-white hover:bg-black hover:shadow-xl ring-4 ring-slate-100"
+                : "bg-slate-200 text-slate-500 hover:bg-slate-300"
+            }
+          `}
         >
-          <RotateCcw size={18} />
+          <RotateCcw size={20} />
           {t.replay}
         </button>
       </div>
@@ -56,7 +130,7 @@ export function GuessModal({
   isConnected: boolean;
 }) {
   const t = TRANSLATIONS[lang];
-  
+
   // 入力が無効化される条件
   const isDisabled = isProcessing || !isConnected;
 
@@ -67,11 +141,11 @@ export function GuessModal({
         className="absolute inset-0 bg-slate-900/40 backdrop-blur-sm transition-opacity"
         onClick={onClose}
       ></div>
-      
+
       {/* モーダル本体 */}
       <div className="relative w-full max-w-md bg-white rounded-t-[2rem] sm:rounded-[2rem] p-6 pb-10 shadow-2xl animate-in slide-in-from-bottom duration-300 sm:m-4">
         <div className="w-12 h-1 bg-slate-200 rounded-full mx-auto mb-6 sm:hidden"></div>
-        
+
         <div className="text-center mb-6">
           <h3 className="text-xl font-bold text-slate-900">{t.guessTitle}</h3>
           <p className="text-slate-500 text-sm mt-1">{t.guessDesc}</p>
@@ -214,14 +288,20 @@ export function RankingModal({
 }) {
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-      <div className="absolute inset-0 bg-slate-900/20 backdrop-blur-sm" onClick={onClose}></div>
+      <div
+        className="absolute inset-0 bg-slate-900/20 backdrop-blur-sm"
+        onClick={onClose}
+      ></div>
       <div className="bg-white rounded-2xl w-full max-w-md max-h-[80vh] flex flex-col shadow-2xl animate-in zoom-in-95 duration-200 relative z-10">
         <div className="p-4 border-b border-slate-100 flex items-center justify-between">
           <h3 className="font-bold text-slate-700 flex items-center gap-2">
             <Trophy size={18} className="text-yellow-500" />
             Top 100 Ranking
           </h3>
-          <button onClick={onClose} className="p-1 hover:bg-slate-100 rounded-full">
+          <button
+            onClick={onClose}
+            className="p-1 hover:bg-slate-100 rounded-full"
+          >
             <X size={20} className="text-slate-400" />
           </button>
         </div>
@@ -237,11 +317,22 @@ export function RankingModal({
             </thead>
             <tbody>
               {ranking.map((item, index) => (
-                <tr key={index} className="border-b border-slate-50 hover:bg-slate-50/50">
-                  <td className="px-6 py-4 font-bold text-slate-400">#{index + 1}</td>
-                  <td className="px-6 py-4 font-medium text-slate-900">{item.name}</td>
-                  <td className="px-6 py-4 text-right font-mono font-bold text-indigo-600">{item.rate}</td>
-                  <td className="px-6 py-4 text-right text-slate-500">{item.wins}</td>
+                <tr
+                  key={index}
+                  className="border-b border-slate-50 hover:bg-slate-50/50"
+                >
+                  <td className="px-6 py-4 font-bold text-slate-400">
+                    #{index + 1}
+                  </td>
+                  <td className="px-6 py-4 font-medium text-slate-900">
+                    {item.name}
+                  </td>
+                  <td className="px-6 py-4 text-right font-mono font-bold text-indigo-600">
+                    {item.rate}
+                  </td>
+                  <td className="px-6 py-4 text-right text-slate-500">
+                    {item.wins}
+                  </td>
                 </tr>
               ))}
             </tbody>
@@ -265,7 +356,10 @@ export function NameEditModal({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-6">
-      <div className="absolute inset-0 bg-slate-900/30 backdrop-blur-[1px]" onClick={onClose}></div>
+      <div
+        className="absolute inset-0 bg-slate-900/30 backdrop-blur-[1px]"
+        onClick={onClose}
+      ></div>
       <div className="bg-white rounded-2xl p-6 max-w-sm w-full shadow-2xl relative z-10 animate-in zoom-in-95 duration-200">
         <h3 className="text-lg font-bold mb-4 flex items-center gap-2">
           <Edit2 size={18} /> Edit Name
@@ -278,10 +372,16 @@ export function NameEditModal({
           placeholder="Enter your name"
         />
         <div className="flex gap-2">
-          <button onClick={onClose} className="flex-1 py-3 rounded-xl bg-slate-100 text-slate-500 font-bold text-sm hover:bg-slate-200">
+          <button
+            onClick={onClose}
+            className="flex-1 py-3 rounded-xl bg-slate-100 text-slate-500 font-bold text-sm hover:bg-slate-200"
+          >
             Cancel
           </button>
-          <button onClick={() => onSave(name)} className="flex-1 py-3 rounded-xl bg-slate-900 text-white font-bold text-sm hover:bg-black">
+          <button
+            onClick={() => onSave(name)}
+            className="flex-1 py-3 rounded-xl bg-slate-900 text-white font-bold text-sm hover:bg-black"
+          >
             Save
           </button>
         </div>

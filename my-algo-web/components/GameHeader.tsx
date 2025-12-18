@@ -1,5 +1,6 @@
-import { Globe, History, LogOut, Hash } from "lucide-react";
-import { Lang, LogItem } from "@/types";
+import { Globe, History, LogOut, Hash, User as UserIcon, LogIn } from "lucide-react";
+import { Lang, LogItem, User } from "@/types";
+import { API_URL } from "@/utils/constant";
 
 type Props = {
   lang: Lang;
@@ -9,6 +10,7 @@ type Props = {
   gameLogs: LogItem[];
   onShowHistory: () => void;
   onShowHelp: () => void;
+  user: User | null;
 };
 
 export default function GameHeader({
@@ -19,7 +21,12 @@ export default function GameHeader({
   gameLogs,
   onShowHistory,
   onShowHelp,
+  user,
 }: Props) {
+  const handleLogin = () => {
+    window.location.href = `${API_URL}/auth/google`;
+  };
+
   return (
     <header className="px-6 py-4 flex items-center justify-between bg-slate-50/90 backdrop-blur-sm sticky top-0 z-30">
       <div className="flex items-center gap-3">
@@ -42,6 +49,28 @@ export default function GameHeader({
       </div>
 
       <div className="flex items-center gap-2">
+        {/* ユーザー情報 / ログインボタン (未参加時のみ表示) */}
+        {!joined && (
+          user ? (
+            <div className="flex items-center gap-2 mr-2 bg-white pl-3 pr-1 py-1 rounded-full border border-slate-200 shadow-sm">
+              <span className="text-xs font-bold text-slate-700 max-w-[100px] truncate">
+                {user.name}
+              </span>
+              <div className="w-7 h-7 bg-indigo-100 rounded-full flex items-center justify-center text-indigo-600">
+                <UserIcon size={14} />
+              </div>
+            </div>
+          ) : (
+            <button
+              onClick={handleLogin}
+              className="mr-2 px-3 py-1.5 bg-slate-900 text-white text-xs font-bold rounded-full hover:bg-black transition-colors flex items-center gap-1.5 shadow-sm"
+            >
+              <LogIn size={12} />
+              Login
+            </button>
+          )
+        )}
+
         <button
           onClick={toggleLang}
           className="w-9 h-9 flex items-center justify-center rounded-full bg-white border border-slate-200 text-slate-600 hover:bg-slate-100 hover:text-slate-900 transition-colors shadow-sm"

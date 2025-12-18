@@ -78,6 +78,7 @@ export default function Home() {
           gameLogs={gameLogs}
           onShowHistory={() => setShowHistoryModal(true)}
           onShowHelp={() => setShowHelp(true)}
+          user={user}
         />
 
         {!joined ? (

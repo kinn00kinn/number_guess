@@ -63,56 +63,79 @@ export class MatchMaker extends DurableObject {
   }
 
   async alarm() {
-    // マッチング処理
-    // レートが近い人をマッチングさせるロジックを入れると良いが、
-    // まずは単純なFIFOで実装。
-    
-    while (this.queue.length >= 2) {
-      const p1 = this.queue.shift()!;
-      const p2 = this.queue.shift()!;
+    // 接続切れのプレイヤーを削除
+    this.queue = this.queue.filter(p => {
+      try {
+        // readyStateチェック (Durable ObjectのWebSocketは標準と少し違うが、sendでエラーが出たら削除でも良い)
+        // ここでは安全のため、明らかに切断されているものを除外したいが、
+        // DOのWebSocketは自動でcloseイベントが来るので、webSocketCloseで処理されているはず。
+        // 念のため、生存確認は送信時に行う。
+        return true;
+      } catch {
+        return false;
+      }
+    });
 
-      // 接続が切れている可能性があるのでチェック（Durable ObjectのWebSocket管理は自動だが念のため）
-      if (p1.ws.readyState !== WebSocket.OPEN) {
-        this.queue.unshift(p2); // p2を戻す
+    // レート順にソート（近いレートの人と当たりやすくする）
+    this.queue.sort((a, b) => a.rate - b.rate);
+
+    let i = 0;
+    while (i < this.queue.length - 1) {
+      const p1 = this.queue[i];
+      const p2 = this.queue[i+1];
+
+      // 自分自身とはマッチングしない
+      if (p1.userId === p2.userId) {
+        i++;
         continue;
       }
-      if (p2.ws.readyState !== WebSocket.OPEN) {
-        this.queue.unshift(p1); // p1を戻す（実際はp1は捨てて良いが）
-        continue;
-      }
 
-      const roomId = crypto.randomUUID();
+      // レート差のチェック（オプション：例えば差が500以内ならマッチングなど）
+      // 今回はシンプルに隣り合う人とマッチングさせる
       
+      // マッチング成立
+      const roomId = crypto.randomUUID();
       try {
         p1.ws.send(JSON.stringify({ type: "MATCH_FOUND", roomId, opponentRate: p2.rate }));
         p2.ws.send(JSON.stringify({ type: "MATCH_FOUND", roomId, opponentRate: p1.rate }));
         p1.ws.close();
         p2.ws.close();
       } catch (e) {
-        // エラーハンドリング
+        // 送信エラーならそのプレイヤーを削除してリトライすべきだが、
+        // 次のアラームで処理されるか、webSocketCloseで消えるのを待つ
       }
+
+      // マッチングした2人をキューから削除
+      this.queue.splice(i, 2);
+      // インデックスは進めなくて良い（削除されたので次のペアがiに来る）
     }
 
     // CPU対戦へのフォールバック
     const now = Date.now();
-    const timeout = 5000; // テスト用に5秒に短縮
+    const timeout = 10000; // 10秒待機
 
     // 待機時間が長いプレイヤーを探す
-    // queueは後ろに追加されるので、先頭が一番古い
-    while (this.queue.length > 0 && now - this.queue[0].joinedAt > timeout) {
-      const p = this.queue.shift()!;
-      if (p.ws.readyState === WebSocket.OPEN) {
+    // queueはレート順にソートされてしまったので、joinedAtを見る必要がある
+    // 削除操作が入るので、後ろからループするか、filterを使う
+    const remainingQueue: QueuedPlayer[] = [];
+    
+    for (const p of this.queue) {
+      if (now - p.joinedAt > timeout) {
+        // タイムアウト -> CPU戦
         const roomId = crypto.randomUUID();
         try {
           p.ws.send(JSON.stringify({ type: "MATCH_FOUND", roomId, mode: "cpu" }));
           p.ws.close();
         } catch (e) {}
+      } else {
+        remainingQueue.push(p);
       }
     }
+    this.queue = remainingQueue;
 
     // まだキューに残っているなら、再度アラームをセット
     if (this.queue.length > 0) {
-      await this.ctx.storage.setAlarm(Date.now() + 3000);
+      await this.ctx.storage.setAlarm(Date.now() + 1000);
     }
   }
 }

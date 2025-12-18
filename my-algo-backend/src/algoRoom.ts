@@ -17,6 +17,12 @@ export interface Player {
   isCpu: boolean;
 }
 
+export interface RatingUpdate {
+  old: number;
+  new: number;
+  diff: number;
+}
+
 export interface GameState {
   phase: "waiting" | "playing" | "finished";
   players: Player[];
@@ -24,6 +30,7 @@ export interface GameState {
   turnPlayerId: string | null;
   drawnCard: Card | null;
   winner: string | null;
+  ratingUpdates: Record<string, RatingUpdate> | null;
 }
 
 export type Bindings = {
@@ -49,6 +56,7 @@ export class AlgoRoom extends DurableObject {
       turnPlayerId: null,
       drawnCard: null,
       winner: null,
+      ratingUpdates: null,
     };
   }
 
@@ -115,6 +123,7 @@ export class AlgoRoom extends DurableObject {
         drawnCard: drawnCardMasked,
         winner: this.state.winner,
         deckCount: this.state.deck.length,
+        ratingUpdates: this.state.ratingUpdates,
       });
 
       try {
@@ -231,7 +240,7 @@ export class AlgoRoom extends DurableObject {
       // HIT
       targetCard.isOpen = true;
       if (opponent.hand.every((c) => c.isOpen)) {
-        this.finishGame(attackerId);
+        await this.finishGame(attackerId);
       } else {
         // 続けて攻撃可能だが、CPUの場合はどうするか？
         // CPUなら確率でStayさせるなどのロジックが必要。
@@ -264,6 +273,7 @@ export class AlgoRoom extends DurableObject {
   startGame() {
     this.state.phase = "playing";
     this.state.winner = null;
+    this.state.ratingUpdates = null;
     this.state.deck = [];
     for (let i = 0; i < 12; i++) {
       this.state.deck.push({ color: "black", number: i, isOpen: false, id: `b-${i}` });
@@ -335,16 +345,22 @@ export class AlgoRoom extends DurableObject {
   async finishGame(winnerId: string) {
     this.state.phase = "finished";
     this.state.winner = winnerId;
-    this.broadcastState();
-
+    
     // レート計算と保存
-    await this.updateRatings(winnerId);
+    try {
+      const updates = await this.updateRatings(winnerId);
+      this.state.ratingUpdates = updates;
+    } catch (e) {
+      console.error("Failed to update ratings:", e);
+    }
+
+    this.broadcastState();
   }
 
-  async updateRatings(winnerId: string) {
+  async updateRatings(winnerId: string): Promise<Record<string, RatingUpdate> | null> {
     const winner = this.state.players.find(p => p.id === winnerId);
     const loser = this.state.players.find(p => p.id !== winnerId);
-    if (!winner || !loser) return;
+    if (!winner || !loser) return null;
 
     console.log(`updateRatings called. Winner: ${winner.id}, Loser: ${loser.id}`);
 
@@ -355,24 +371,35 @@ export class AlgoRoom extends DurableObject {
       if (!winner.isCpu) {
         try {
           const before = await this.env.DB.prepare("SELECT rate FROM users WHERE id = ?").bind(winner.id).first<any>();
-          console.log(`[CPU Win] Before Rate: ${before?.rate}`);
+          const currentRate = before?.rate || 1500;
+          const newRate = currentRate + 10;
 
-          await this.env.DB.prepare("UPDATE users SET rate = rate + 10, wins = wins + 1, matches = matches + 1 WHERE id = ?").bind(winner.id).run();
+          await this.env.DB.prepare("UPDATE users SET rate = ?, wins = wins + 1, matches = matches + 1 WHERE id = ?").bind(newRate, winner.id).run();
 
-          const after = await this.env.DB.prepare("SELECT rate FROM users WHERE id = ?").bind(winner.id).first<any>();
-          console.log(`[CPU Win] After Rate: ${after?.rate}`);
+          return {
+            [winner.id]: { old: currentRate, new: newRate, diff: 10 }
+          };
         } catch (e) {
           console.error("Error updating CPU win:", e);
+          return null;
         }
       } else if (!loser.isCpu) {
         // プレイヤーが負けた場合
         try {
+          const before = await this.env.DB.prepare("SELECT rate FROM users WHERE id = ?").bind(loser.id).first<any>();
+          const currentRate = before?.rate || 1500;
+
           await this.env.DB.prepare("UPDATE users SET matches = matches + 1 WHERE id = ?").bind(loser.id).run();
+          
+          return {
+            [loser.id]: { old: currentRate, new: currentRate, diff: 0 }
+          };
         } catch (e) {
           console.error("Error updating CPU loss:", e);
+          return null;
         }
       }
-      return;
+      return null;
     }
 
     try {
@@ -382,13 +409,11 @@ export class AlgoRoom extends DurableObject {
 
       if (!winnerData || !loserData) {
         console.log("User data not found for PvP rating update");
-        return;
+        return null;
       }
 
-      console.log(`[PvP] Before - Winner: ${winnerData.rate}, Loser: ${loserData.rate}`);
-
-      const Rw = winnerData.rate;
-      const Rl = loserData.rate;
+      const Rw = winnerData.rate || 1500;
+      const Rl = loserData.rate || 1500;
       const K = 32;
 
       const Ew = 1 / (1 + Math.pow(10, (Rl - Rw) / 400));
@@ -397,15 +422,20 @@ export class AlgoRoom extends DurableObject {
       const newRw = Math.round(Rw + K * (1 - Ew));
       const newRl = Math.round(Rl + K * (0 - El));
 
-      console.log(`[PvP] After (Calculated) - Winner: ${newRw}, Loser: ${newRl}`);
+      console.log(`[PvP] Update: Winner ${Rw} -> ${newRw}, Loser ${Rl} -> ${newRl}`);
 
-      const batchResult = await this.env.DB.batch([
+      await this.env.DB.batch([
         this.env.DB.prepare("UPDATE users SET rate = ?, wins = wins + 1, matches = matches + 1 WHERE id = ?").bind(newRw, winner.id),
         this.env.DB.prepare("UPDATE users SET rate = ?, matches = matches + 1 WHERE id = ?").bind(newRl, loser.id)
       ]);
-      console.log("[PvP] Batch Result:", JSON.stringify(batchResult));
+      
+      return {
+        [winner.id]: { old: Rw, new: newRw, diff: newRw - Rw },
+        [loser.id]: { old: Rl, new: newRl, diff: newRl - Rl }
+      };
     } catch (e) {
       console.error("[PvP] Error updating ratings:", e);
+      return null;
     }
   }
 
@@ -481,7 +511,7 @@ export class AlgoRoom extends DurableObject {
       if (this.state.phase === "playing") {
         const opponent = this.state.players.find(p => p.id !== pid);
         if (opponent) {
-           this.finishGame(opponent.id);
+           await this.finishGame(opponent.id);
         } else {
            // 両方いなくなった?
            this.state.phase = "finished";
@@ -493,6 +523,7 @@ export class AlgoRoom extends DurableObject {
       if (this.state.players.length === 0) {
         this.state.phase = "waiting";
         this.state.deck = [];
+        this.state.ratingUpdates = null;
       }
     }
   }

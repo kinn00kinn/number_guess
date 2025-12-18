@@ -1,4 +1,5 @@
-import { Globe, History, LogOut, Hash, User as UserIcon, LogIn } from "lucide-react";
+import { useState } from "react";
+import { Globe, History, LogOut, Hash, User as UserIcon, LogIn, Menu, X, Trophy, Edit2 } from "lucide-react";
 import { Lang, LogItem, User } from "@/types";
 import { API_URL } from "@/utils/constant";
 
@@ -11,6 +12,9 @@ type Props = {
   onShowHistory: () => void;
   onShowHelp: () => void;
   user: User | null;
+  onShowRanking: () => void;
+  onEditName: () => void;
+  onLogout: () => void;
 };
 
 export default function GameHeader({
@@ -22,7 +26,12 @@ export default function GameHeader({
   onShowHistory,
   onShowHelp,
   user,
+  onShowRanking,
+  onEditName,
+  onLogout,
 }: Props) {
+  const [showMenu, setShowMenu] = useState(false);
+
   const handleLogin = () => {
     window.location.href = `${API_URL}/auth/google`;
   };
@@ -33,7 +42,6 @@ export default function GameHeader({
         <h1 className="text-xl font-black tracking-tighter text-slate-900 hidden sm:block">
           Algo<span className="text-slate-400">.Online</span>
         </h1>
-        {/* ★ルームIDを強調 */}
         {joined && (
           <div
             className="flex items-center gap-1.5 bg-slate-900 text-white px-3 py-1.5 rounded-full shadow-sm cursor-pointer hover:bg-black transition-colors"
@@ -49,26 +57,51 @@ export default function GameHeader({
       </div>
 
       <div className="flex items-center gap-2">
-        {/* ユーザー情報 / ログインボタン (未参加時のみ表示) */}
+        {/* フローティングメニュー (未参加時) */}
         {!joined && (
-          user ? (
-            <div className="flex items-center gap-2 mr-2 bg-white pl-3 pr-1 py-1 rounded-full border border-slate-200 shadow-sm">
-              <span className="text-xs font-bold text-slate-700 max-w-[100px] truncate">
-                {user.name}
-              </span>
-              <div className="w-7 h-7 bg-indigo-100 rounded-full flex items-center justify-center text-indigo-600">
-                <UserIcon size={14} />
-              </div>
-            </div>
-          ) : (
+          <div className="relative">
             <button
-              onClick={handleLogin}
-              className="mr-2 px-3 py-1.5 bg-slate-900 text-white text-xs font-bold rounded-full hover:bg-black transition-colors flex items-center gap-1.5 shadow-sm"
+              onClick={() => setShowMenu(!showMenu)}
+              className="w-9 h-9 flex items-center justify-center rounded-full bg-white border border-slate-200 text-slate-600 hover:bg-slate-100 hover:text-slate-900 transition-colors shadow-sm"
             >
-              <LogIn size={12} />
-              Login
+              {user ? (
+                <div className="w-full h-full rounded-full bg-indigo-100 flex items-center justify-center text-indigo-600 font-bold text-xs">
+                  {user.name.charAt(0)}
+                </div>
+              ) : (
+                <Menu size={16} />
+              )}
             </button>
-          )
+
+            {showMenu && (
+              <>
+                <div className="fixed inset-0 z-40" onClick={() => setShowMenu(false)}></div>
+                <div className="absolute right-0 top-12 w-56 bg-white rounded-2xl shadow-xl border border-slate-100 p-2 z-50 animate-in fade-in slide-in-from-top-2 duration-200">
+                  {user ? (
+                    <>
+                      <div className="px-4 py-3 border-b border-slate-100 mb-2">
+                        <p className="text-xs text-slate-400 font-bold uppercase tracking-wider">Signed in as</p>
+                        <p className="font-bold text-slate-800 truncate">{user.name}</p>
+                      </div>
+                      <button onClick={() => { onEditName(); setShowMenu(false); }} className="w-full text-left px-4 py-2.5 rounded-xl hover:bg-slate-50 text-sm font-medium text-slate-600 flex items-center gap-2">
+                        <Edit2 size={16} /> Edit Name
+                      </button>
+                      <button onClick={() => { onShowRanking(); setShowMenu(false); }} className="w-full text-left px-4 py-2.5 rounded-xl hover:bg-slate-50 text-sm font-medium text-slate-600 flex items-center gap-2">
+                        <Trophy size={16} /> Ranking
+                      </button>
+                      <button onClick={() => { onLogout(); setShowMenu(false); }} className="w-full text-left px-4 py-2.5 rounded-xl hover:bg-red-50 text-sm font-medium text-red-600 flex items-center gap-2">
+                        <LogOut size={16} /> Logout
+                      </button>
+                    </>
+                  ) : (
+                    <button onClick={handleLogin} className="w-full text-left px-4 py-2.5 rounded-xl hover:bg-slate-50 text-sm font-medium text-slate-600 flex items-center gap-2">
+                      <LogIn size={16} /> Login with Google
+                    </button>
+                  )}
+                </div>
+              </>
+            )}
+          </div>
         )}
 
         <button

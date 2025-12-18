@@ -1,5 +1,5 @@
 import { Context } from "hono";
-import { setCookie, getCookie } from "hono/cookie";
+import { setCookie, getCookie, deleteCookie } from "hono/cookie";
 
 export const googleAuth = async (c: Context) => {
   const clientId = c.env.GOOGLE_CLIENT_ID;
@@ -18,7 +18,6 @@ export const googleCallback = async (c: Context) => {
   const clientSecret = c.env.GOOGLE_CLIENT_SECRET;
   const redirectUri = c.env.GOOGLE_REDIRECT_URI || "http://localhost:8787/auth/callback";
 
-  // Exchange code for token
   const tokenResponse = await fetch("https://oauth2.googleapis.com/token", {
     method: "POST",
     headers: { "Content-Type": "application/x-www-form-urlencoded" },
@@ -34,13 +33,11 @@ export const googleCallback = async (c: Context) => {
   const tokenData = await tokenResponse.json() as any;
   if (!tokenData.access_token) return c.text("Failed to get token", 400);
 
-  // Get user info
   const userResponse = await fetch("https://www.googleapis.com/oauth2/v2/userinfo", {
     headers: { Authorization: `Bearer ${tokenData.access_token}` },
   });
   const userData = await userResponse.json() as any;
 
-  // DB Upsert
   const db = c.env.DB as D1Database;
   const existingUser = await db.prepare("SELECT * FROM users WHERE google_id = ?").bind(userData.id).first();
 
@@ -50,7 +47,6 @@ export const googleCallback = async (c: Context) => {
     await db.prepare("INSERT INTO users (id, google_id, name) VALUES (?, ?, ?)").bind(userId, userData.id, userData.name).run();
   }
 
-  // Set Session
   const url = new URL(c.req.url);
   const isSecure = url.protocol === "https:";
 
@@ -58,11 +54,10 @@ export const googleCallback = async (c: Context) => {
     httpOnly: true,
     secure: isSecure,
     sameSite: "Lax",
-    maxAge: 60 * 60 * 24 * 7, // 1 week
+    maxAge: 60 * 60 * 24 * 7,
     path: "/",
   });
 
-  // フロントエンドへリダイレクト
   return c.redirect("http://localhost:3000/"); 
 };
 
@@ -75,4 +70,28 @@ export const getMe = async (c: Context) => {
   
   if (!user) return c.json({ error: "User not found" }, 404);
   return c.json(user);
+};
+
+export const logout = async (c: Context) => {
+  deleteCookie(c, "session_user_id", { path: "/" });
+  return c.json({ success: true });
+};
+
+export const updateName = async (c: Context) => {
+  const userId = getCookie(c, "session_user_id");
+  if (!userId) return c.json({ error: "Unauthorized" }, 401);
+
+  const { name } = await c.req.json<{ name: string }>();
+  if (!name || name.length > 10) return c.json({ error: "Invalid name" }, 400);
+
+  const db = c.env.DB as D1Database;
+  await db.prepare("UPDATE users SET name = ? WHERE id = ?").bind(name, userId).run();
+  
+  return c.json({ success: true });
+};
+
+export const getRanking = async (c: Context) => {
+  const db = c.env.DB as D1Database;
+  const { results } = await db.prepare("SELECT name, rate, wins FROM users ORDER BY rate DESC LIMIT 100").all();
+  return c.json(results);
 };

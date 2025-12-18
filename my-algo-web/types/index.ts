@@ -37,3 +37,9 @@ export type User = {
   matches: number;
   created_at: string;
 };
+
+export type RankingItem = {
+  name: string;
+  rate: number;
+  wins: number;
+};

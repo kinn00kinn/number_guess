@@ -3,7 +3,7 @@ import { cors } from "hono/cors";
 import { getCookie } from "hono/cookie";
 import { AlgoRoom } from "./algoRoom";
 import { MatchMaker } from "./matchMaker";
-import { googleAuth, googleCallback, getMe } from "./auth";
+import { googleAuth, googleCallback, getMe, updateName, getRanking, logout } from "./auth";
 
 type Bindings = {
   ALGO_ROOM: DurableObjectNamespace;
@@ -19,9 +19,9 @@ const app = new Hono<{ Bindings: Bindings }>();
 app.use(
   "/*",
   cors({
-    origin: (origin) => origin, // Allow all origins for now, or specify frontend URL
+    origin: (origin) => origin,
     allowHeaders: ["Content-Type", "Upgrade"],
-    allowMethods: ["GET", "POST", "OPTIONS"],
+    allowMethods: ["GET", "POST", "PUT", "OPTIONS"],
     credentials: true,
   })
 );
@@ -30,6 +30,9 @@ app.use(
 app.get("/auth/google", googleAuth);
 app.get("/auth/callback", googleCallback);
 app.get("/auth/me", getMe);
+app.post("/auth/logout", logout);
+app.put("/user/name", updateName);
+app.get("/ranking", getRanking);
 
 // Game Routes
 app.get("/game/new", (c) => {
@@ -46,17 +49,14 @@ app.get("/game/:id", async (c) => {
 
 // Matchmaking Route
 app.get("/match/random", async (c) => {
-  // Check auth
   const userId = getCookie(c, "session_user_id");
   if (!userId) {
     return c.json({ error: "Unauthorized" }, 401);
   }
 
-  // Get user rate
   const user = await c.env.DB.prepare("SELECT rate FROM users WHERE id = ?").bind(userId).first<any>();
   const rate = user?.rate || 1500;
 
-  // Connect to MatchMaker
   const stubId = c.env.MATCH_MAKER.idFromName("global");
   const stub = c.env.MATCH_MAKER.get(stubId);
   

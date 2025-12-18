@@ -206,12 +206,15 @@ export function useGame(lang: Lang) {
         setIsConnected(false);
         stopProcessing();
         if (pingIntervalRef.current) clearInterval(pingIntervalRef.current);
+        
+        // 意図的な切断（shouldReconnectRef.current = false）でない場合のみ再接続
         if (shouldReconnectRef.current && joinedRef.current) {
+          // 再接続の頻度を少し下げる（3秒 -> 5秒）
           setTimeout(() => {
             if (shouldReconnectRef.current) {
               joinGameRef.current(id);
             }
-          }, 3000);
+          }, 5000);
         } else {
           setJoined(false);
           setGameState(null);

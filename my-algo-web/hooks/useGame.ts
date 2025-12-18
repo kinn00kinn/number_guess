@@ -252,8 +252,14 @@ export function useGame(lang: Lang, user: User | null) {
           const { roomId, mode } = data;
           ws.close();
           setIsSearching(false);
-          const query = mode === "cpu" ? "?cpu=true" : "";
-          joinGame(roomId + query);
+          // ランクマッチなので ?ranked=true を付与
+          // CPU戦の場合は ?cpu=true&ranked=true になるように調整
+          const params = new URLSearchParams();
+          params.set("ranked", "true");
+          if (mode === "cpu") {
+            params.set("cpu", "true");
+          }
+          joinGame(`${roomId}?${params.toString()}`);
         }
       } catch (e) {
         console.error(e);

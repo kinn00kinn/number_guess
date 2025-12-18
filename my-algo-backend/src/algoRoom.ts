@@ -346,38 +346,67 @@ export class AlgoRoom extends DurableObject {
     const loser = this.state.players.find(p => p.id !== winnerId);
     if (!winner || !loser) return;
 
+    console.log(`updateRatings called. Winner: ${winner.id}, Loser: ${loser.id}`);
+
     // CPU戦の場合
     if (winner.isCpu || loser.isCpu) {
+      console.log("CPU Match branch");
       // プレイヤーが勝った場合のみレートを少し上げる
       if (!winner.isCpu) {
-        await this.env.DB.prepare("UPDATE users SET rate = rate + 10, wins = wins + 1, matches = matches + 1 WHERE id = ?").bind(winner.id).run();
+        try {
+          const before = await this.env.DB.prepare("SELECT rate FROM users WHERE id = ?").bind(winner.id).first<any>();
+          console.log(`[CPU Win] Before Rate: ${before?.rate}`);
+
+          await this.env.DB.prepare("UPDATE users SET rate = rate + 10, wins = wins + 1, matches = matches + 1 WHERE id = ?").bind(winner.id).run();
+
+          const after = await this.env.DB.prepare("SELECT rate FROM users WHERE id = ?").bind(winner.id).first<any>();
+          console.log(`[CPU Win] After Rate: ${after?.rate}`);
+        } catch (e) {
+          console.error("Error updating CPU win:", e);
+        }
       } else if (!loser.isCpu) {
         // プレイヤーが負けた場合
-        await this.env.DB.prepare("UPDATE users SET matches = matches + 1 WHERE id = ?").bind(loser.id).run();
+        try {
+          await this.env.DB.prepare("UPDATE users SET matches = matches + 1 WHERE id = ?").bind(loser.id).run();
+        } catch (e) {
+          console.error("Error updating CPU loss:", e);
+        }
       }
       return;
     }
 
-    // DBから現在のレートを取得
-    const winnerData = await this.env.DB.prepare("SELECT * FROM users WHERE id = ?").bind(winner.id).first<any>();
-    const loserData = await this.env.DB.prepare("SELECT * FROM users WHERE id = ?").bind(loser.id).first<any>();
+    try {
+      // DBから現在のレートを取得
+      const winnerData = await this.env.DB.prepare("SELECT * FROM users WHERE id = ?").bind(winner.id).first<any>();
+      const loserData = await this.env.DB.prepare("SELECT * FROM users WHERE id = ?").bind(loser.id).first<any>();
 
-    if (!winnerData || !loserData) return;
+      if (!winnerData || !loserData) {
+        console.log("User data not found for PvP rating update");
+        return;
+      }
 
-    const Rw = winnerData.rate;
-    const Rl = loserData.rate;
-    const K = 32;
+      console.log(`[PvP] Before - Winner: ${winnerData.rate}, Loser: ${loserData.rate}`);
 
-    const Ew = 1 / (1 + Math.pow(10, (Rl - Rw) / 400));
-    const El = 1 / (1 + Math.pow(10, (Rw - Rl) / 400));
+      const Rw = winnerData.rate;
+      const Rl = loserData.rate;
+      const K = 32;
 
-    const newRw = Math.round(Rw + K * (1 - Ew));
-    const newRl = Math.round(Rl + K * (0 - El));
+      const Ew = 1 / (1 + Math.pow(10, (Rl - Rw) / 400));
+      const El = 1 / (1 + Math.pow(10, (Rw - Rl) / 400));
 
-    await this.env.DB.batch([
-      this.env.DB.prepare("UPDATE users SET rate = ?, wins = wins + 1, matches = matches + 1 WHERE id = ?").bind(newRw, winner.id),
-      this.env.DB.prepare("UPDATE users SET rate = ?, matches = matches + 1 WHERE id = ?").bind(newRl, loser.id)
-    ]);
+      const newRw = Math.round(Rw + K * (1 - Ew));
+      const newRl = Math.round(Rl + K * (0 - El));
+
+      console.log(`[PvP] After (Calculated) - Winner: ${newRw}, Loser: ${newRl}`);
+
+      const batchResult = await this.env.DB.batch([
+        this.env.DB.prepare("UPDATE users SET rate = ?, wins = wins + 1, matches = matches + 1 WHERE id = ?").bind(newRw, winner.id),
+        this.env.DB.prepare("UPDATE users SET rate = ?, matches = matches + 1 WHERE id = ?").bind(newRl, loser.id)
+      ]);
+      console.log("[PvP] Batch Result:", JSON.stringify(batchResult));
+    } catch (e) {
+      console.error("[PvP] Error updating ratings:", e);
+    }
   }
 
   // --- CPU Logic ---

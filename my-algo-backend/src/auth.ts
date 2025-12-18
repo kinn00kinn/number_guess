@@ -67,12 +67,11 @@ export const googleCallback = async (c: Context) => {
     }
 
     const url = new URL(c.req.url);
-    const isSecure = url.protocol === "https:";
 
     setCookie(c, "session_user_id", userId, {
       httpOnly: true,
-      secure: true, // 本番環境はHTTPS必須なのでtrueで固定
-      sameSite: "None", // クロスドメインでCookieを共有するためにNoneにする
+      secure: url.protocol === "https:",
+      sameSite: url.protocol === "https:" ? "None" : "Lax",
       maxAge: 60 * 60 * 24 * 7,
       path: "/",
     });
@@ -99,10 +98,11 @@ export const getMe = async (c: Context) => {
 };
 
 export const logout = async (c: Context) => {
+  const url = new URL(c.req.url);
   deleteCookie(c, "session_user_id", {
     path: "/",
-    secure: true,
-    sameSite: "None",
+    secure: url.protocol === "https:",
+    sameSite: url.protocol === "https:" ? "None" : "Lax",
   });
   return c.json({ success: true });
 };

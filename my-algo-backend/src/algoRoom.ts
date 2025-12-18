@@ -335,8 +335,17 @@ export class AlgoRoom extends DurableObject {
     const loser = this.state.players.find(p => p.id !== winnerId);
     if (!winner || !loser) return;
 
-    // CPU戦はレート変動なし（または微増）とするが、今回は変動なしにする
-    if (winner.isCpu || loser.isCpu) return;
+    // CPU戦の場合
+    if (winner.isCpu || loser.isCpu) {
+      // プレイヤーが勝った場合のみレートを少し上げる
+      if (!winner.isCpu) {
+        await this.env.DB.prepare("UPDATE users SET rate = rate + 10, wins = wins + 1, matches = matches + 1 WHERE id = ?").bind(winner.id).run();
+      } else if (!loser.isCpu) {
+        // プレイヤーが負けた場合
+        await this.env.DB.prepare("UPDATE users SET matches = matches + 1 WHERE id = ?").bind(loser.id).run();
+      }
+      return;
+    }
 
     // DBから現在のレートを取得
     const winnerData = await this.env.DB.prepare("SELECT * FROM users WHERE id = ?").bind(winner.id).first<any>();

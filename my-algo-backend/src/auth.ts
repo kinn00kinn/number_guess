@@ -11,57 +11,80 @@ export const googleAuth = async (c: Context) => {
 };
 
 export const googleCallback = async (c: Context) => {
-  const code = c.req.query("code");
-  if (!code) return c.text("No code provided", 400);
+  try {
+    const code = c.req.query("code");
+    if (!code) return c.text("No code provided", 400);
 
-  const clientId = c.env.GOOGLE_CLIENT_ID;
-  const clientSecret = c.env.GOOGLE_CLIENT_SECRET;
-  const redirectUri = c.env.GOOGLE_REDIRECT_URI || `${new URL(c.req.url).origin}/auth/callback`;
+    const clientId = c.env.GOOGLE_CLIENT_ID;
+    const clientSecret = c.env.GOOGLE_CLIENT_SECRET;
+    if (!clientId || !clientSecret) {
+      return c.text("Configuration Error: GOOGLE_CLIENT_ID or GOOGLE_CLIENT_SECRET is missing.", 500);
+    }
 
-  const tokenResponse = await fetch("https://oauth2.googleapis.com/token", {
-    method: "POST",
-    headers: { "Content-Type": "application/x-www-form-urlencoded" },
-    body: new URLSearchParams({
-      code,
-      client_id: clientId,
-      client_secret: clientSecret,
-      redirect_uri: redirectUri,
-      grant_type: "authorization_code",
-    }),
-  });
+    const redirectUri = c.env.GOOGLE_REDIRECT_URI || `${new URL(c.req.url).origin}/auth/callback`;
 
-  const tokenData = await tokenResponse.json() as any;
-  if (!tokenData.access_token) return c.text("Failed to get token", 400);
+    const tokenResponse = await fetch("https://oauth2.googleapis.com/token", {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body: new URLSearchParams({
+        code,
+        client_id: clientId,
+        client_secret: clientSecret,
+        redirect_uri: redirectUri,
+        grant_type: "authorization_code",
+      }),
+    });
 
-  const userResponse = await fetch("https://www.googleapis.com/oauth2/v2/userinfo", {
-    headers: { Authorization: `Bearer ${tokenData.access_token}` },
-  });
-  const userData = await userResponse.json() as any;
+    const tokenData = await tokenResponse.json() as any;
+    if (!tokenData.access_token) {
+      console.error("Token Error:", tokenData);
+      return c.text(`Failed to get token: ${JSON.stringify(tokenData)}`, 400);
+    }
 
-  const db = c.env.DB as D1Database;
-  const existingUser = await db.prepare("SELECT * FROM users WHERE google_id = ?").bind(userData.id).first();
+    const userResponse = await fetch("https://www.googleapis.com/oauth2/v2/userinfo", {
+      headers: { Authorization: `Bearer ${tokenData.access_token}` },
+    });
+    const userData = await userResponse.json() as any;
 
-  let userId = existingUser?.id as string;
-  if (!existingUser) {
-    userId = crypto.randomUUID();
-    await db.prepare("INSERT INTO users (id, google_id, name) VALUES (?, ?, ?)").bind(userId, userData.id, userData.name).run();
+    const db = c.env.DB as D1Database;
+    
+    // Check if table exists (or just try query)
+    let existingUser;
+    try {
+      existingUser = await db.prepare("SELECT * FROM users WHERE google_id = ?").bind(userData.id).first();
+    } catch (e: any) {
+      return c.text(`Database Error (Select): ${e.message}`, 500);
+    }
+
+    let userId = existingUser?.id as string;
+    if (!existingUser) {
+      userId = crypto.randomUUID();
+      try {
+        await db.prepare("INSERT INTO users (id, google_id, name) VALUES (?, ?, ?)").bind(userId, userData.id, userData.name).run();
+      } catch (e: any) {
+        return c.text(`Database Error (Insert): ${e.message}`, 500);
+      }
+    }
+
+    const url = new URL(c.req.url);
+    const isSecure = url.protocol === "https:";
+
+    setCookie(c, "session_user_id", userId, {
+      httpOnly: true,
+      secure: true, // 本番環境はHTTPS必須なのでtrueで固定
+      sameSite: "None", // クロスドメインでCookieを共有するためにNoneにする
+      maxAge: 60 * 60 * 24 * 7,
+      path: "/",
+    });
+
+    const frontendUrl = c.env.FRONTEND_URL || "http://localhost:3000";
+    return c.redirect(frontendUrl);
+
+  } catch (e: any) {
+    console.error("Callback Error:", e);
+    return c.text(`Internal Server Error: ${e.message}
+${e.stack}`, 500);
   }
-
-  const url = new URL(c.req.url);
-  const isSecure = url.protocol === "https:";
-
-  setCookie(c, "session_user_id", userId, {
-    httpOnly: true,
-    secure: isSecure,
-    sameSite: "Lax", // クロスオリジンでのCookie送信を許可するためにLaxまたはNoneにする必要がある
-    maxAge: 60 * 60 * 24 * 7,
-    path: "/",
-  });
-
-  // フロントエンドのURLへリダイレクト
-  // 環境変数 FRONTEND_URL があればそれを使い、なければリファラーやデフォルト値を使う
-  const frontendUrl = c.env.FRONTEND_URL;
-  return c.redirect(frontendUrl); 
 };
 
 export const getMe = async (c: Context) => {

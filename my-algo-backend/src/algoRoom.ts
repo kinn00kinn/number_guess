@@ -147,11 +147,6 @@ export class AlgoRoom extends DurableObject {
 
     // 1. JOIN
     if (data.type === "JOIN") {
-      if (this.state.players.length >= 2) {
-        ws.send(JSON.stringify({ type: "ERROR", message: "満員です" }));
-        return;
-      }
-
       // ユーザーIDの決定
       const playerId = data.userId || `User-${Math.random().toString(36).slice(-4)}`;
       let playerName = data.userName || playerId;
@@ -168,11 +163,21 @@ export class AlgoRoom extends DurableObject {
         }
       }
 
+      // 既に自分がいるか確認（再接続）
+      const existingPlayer = this.state.players.find(p => p.id === playerId);
+      
+      if (!existingPlayer && this.state.players.length >= 2) {
+        ws.send(JSON.stringify({ type: "ERROR", message: "満員です" }));
+        return;
+      }
+
       this.sessions.set(ws, playerId);
       
-      // 既に自分がいないか確認
-      if (!this.state.players.find(p => p.id === playerId)) {
+      if (!existingPlayer) {
         this.state.players.push({ id: playerId, name: playerName, hand: [], isCpu: false });
+      } else {
+        // 名前更新（もし変わっていれば）
+        existingPlayer.name = playerName;
       }
 
       // CPUモード判定 (クライアントから送ってもらう or URLパラメータ)
@@ -184,7 +189,10 @@ export class AlgoRoom extends DurableObject {
       this.broadcastState();
 
       if (this.state.players.length === 2) {
-        this.startGame();
+        // 既にプレイ中なら開始しない
+        if (this.state.phase === "waiting") {
+          this.startGame();
+        }
       }
       return;
     }

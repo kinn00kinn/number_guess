@@ -37,6 +37,8 @@ export class AlgoRoom extends DurableObject {
   state: GameState;
   env: Bindings;
 
+  isCpuMode: boolean = false;
+
   constructor(ctx: DurableObjectState, env: Bindings) {
     super(ctx, env);
     this.env = env;
@@ -54,7 +56,9 @@ export class AlgoRoom extends DurableObject {
     const url = new URL(request.url);
     
     // CPU対戦フラグの確認
-    const isCpuMode = url.searchParams.get("cpu") === "true";
+    if (url.searchParams.get("cpu") === "true") {
+      this.isCpuMode = true;
+    }
 
     const upgradeHeader = request.headers.get("Upgrade");
     if (!upgradeHeader || upgradeHeader !== "websocket") {
@@ -64,7 +68,7 @@ export class AlgoRoom extends DurableObject {
     this.ctx.acceptWebSocket(server);
 
     // CPUモードなら、最初の接続時にCPUをプレイヤーとして登録しておく（まだプレイヤーが0人の場合）
-    if (isCpuMode && this.state.players.length === 0) {
+    if (this.isCpuMode && this.state.players.length === 0) {
        // プレイヤーが入ってきたタイミングでCPUを追加する処理は JOIN で行う方が安全
        // ここではフラグだけ覚えておく手もあるが、URLパラメータはJOINメッセージには含まれないので
        // セッションに紐付けるか、あるいはJOIN時にクライアントから送ってもらう。
@@ -153,7 +157,7 @@ export class AlgoRoom extends DurableObject {
 
       // CPUモード判定 (クライアントから送ってもらう or URLパラメータ)
       // ここではクライアントが "cpu": true を送ってくると仮定、または1人目が待機中にタイムアウトでCPU戦になった場合
-      if (data.mode === "cpu" && this.state.players.length === 1) {
+      if ((data.mode === "cpu" || this.isCpuMode) && this.state.players.length === 1) {
          this.addCpuPlayer();
       }
 

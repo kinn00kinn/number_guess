@@ -95,7 +95,7 @@ export class MatchMaker extends DurableObject {
 
     // CPU対戦へのフォールバック
     const now = Date.now();
-    const timeout = 15000; // 15秒待ったらCPU
+    const timeout = 5000; // テスト用に5秒に短縮
 
     // 待機時間が長いプレイヤーを探す
     // queueは後ろに追加されるので、先頭が一番古い

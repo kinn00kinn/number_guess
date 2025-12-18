@@ -50,6 +50,8 @@ export default function Home() {
     setGuessModal,
     joinGame,
     joinRanked,
+    cancelSearch,
+    isSearching,
     handleAttack,
     handleStay,
     guessModalClosingRef,
@@ -86,6 +88,8 @@ export default function Home() {
             onJoin={joinGame}
             onJoinRanked={joinRanked}
             user={user}
+            isSearching={isSearching}
+            onCancelSearch={cancelSearch}
           />
         ) : (
           gameState && (

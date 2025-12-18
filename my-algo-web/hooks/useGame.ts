@@ -13,6 +13,8 @@ export function useGame(lang: Lang) {
   const [hasMoved, setHasMoved] = useState(false);
   const [gameLogs, setGameLogs] = useState<LogItem[]>([]);
 
+  const [isSearching, setIsSearching] = useState(false);
+
   // 直近の攻撃情報（吹き出し表示用）
   const [lastAttack, setLastAttack] = useState<{
     targetIndex: number;
@@ -100,7 +102,9 @@ export function useGame(lang: Lang) {
 
       ws.onopen = () => {
         setIsConnected(true);
-        sendMessage({ type: "JOIN" });
+        // URLからクエリパラメータを解析して mode: "cpu" を付与
+        const isCpu = id.includes("cpu=true");
+        sendMessage({ type: "JOIN", mode: isCpu ? "cpu" : undefined });
         setJoined(true);
         setHasMoved(false);
         pingIntervalRef.current = setInterval(
@@ -220,6 +224,7 @@ export function useGame(lang: Lang) {
   const joinRanked = useCallback(() => {
     shouldReconnectRef.current = true;
     cleanupConnection();
+    setIsSearching(true);
 
     const ws = new WebSocket(`${WS_URL}/match/random`);
     wsRef.current = ws;
@@ -235,6 +240,7 @@ export function useGame(lang: Lang) {
         if (data.type === "MATCH_FOUND") {
           const { roomId, mode } = data;
           ws.close();
+          setIsSearching(false);
           const query = mode === "cpu" ? "?cpu=true" : "";
           joinGame(roomId + query);
         }
@@ -246,8 +252,16 @@ export function useGame(lang: Lang) {
     ws.onclose = () => {
       // マッチング中の切断は再接続しない（キャンセル扱い）
       setIsConnected(false);
+      setIsSearching(false);
     };
   }, [cleanupConnection, joinGame, addLog, lang]);
+
+  const cancelSearch = useCallback(() => {
+    if (wsRef.current) {
+      wsRef.current.close();
+    }
+    setIsSearching(false);
+  }, []);
 
   useEffect(() => {
     joinGameRef.current = joinGame;
@@ -317,6 +331,8 @@ export function useGame(lang: Lang) {
     setGuessModal,
     joinGame,
     joinRanked,
+    cancelSearch,
+    isSearching,
     handleAttack,
     handleStay,
     guessModalClosingRef,

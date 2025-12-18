@@ -1,7 +1,7 @@
 import { Lang } from "@/types";
 
-export const API_URL = "https://my-algo-backend.haruki1009kk.workers.dev";
-export const WS_URL = "wss://my-algo-backend.haruki1009kk.workers.dev";
+export const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8787";
+export const WS_URL = process.env.NEXT_PUBLIC_WS_URL || "ws://localhost:8787";
 
 export const TRANSLATIONS: Record<Lang, Record<string, string>> = {
   ja: {

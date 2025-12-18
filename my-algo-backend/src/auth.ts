@@ -51,9 +51,12 @@ export const googleCallback = async (c: Context) => {
   }
 
   // Set Session
+  const url = new URL(c.req.url);
+  const isSecure = url.protocol === "https:";
+
   setCookie(c, "session_user_id", userId, {
     httpOnly: true,
-    secure: true,
+    secure: isSecure,
     sameSite: "Lax",
     maxAge: 60 * 60 * 24 * 7, // 1 week
     path: "/",

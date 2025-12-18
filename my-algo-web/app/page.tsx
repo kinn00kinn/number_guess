@@ -115,7 +115,7 @@ export default function Home() {
     <div className="min-h-screen bg-slate-50 text-slate-800 font-sans pb-safe selection:bg-slate-200">
       {/* 接続切れアラート */}
       {joined && !isConnected && (
-        <div className="fixed top-0 inset-x-0 bg-rose-500 text-white text-center py-2 z-[100] font-bold shadow-md flex items-center justify-center gap-2 text-sm animate-in slide-in-from-top">
+        <div className="fixed top-16 inset-x-0 bg-rose-500 text-white text-center py-2 z-[90] font-bold shadow-md flex items-center justify-center gap-2 text-sm animate-in slide-in-from-top">
           <RefreshCw size={14} className="animate-spin" />
           <span>{t.reconnecting}</span>
         </div>

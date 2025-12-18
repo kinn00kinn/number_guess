@@ -1,3 +1,4 @@
+// components/Modals.tsx
 import {
   RotateCcw,
   X,
@@ -11,9 +12,19 @@ import {
 } from "lucide-react";
 import { TRANSLATIONS } from "@/utils/constant";
 import { Lang, GameState, LogItem, RankingItem } from "@/types";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 
-// ... ResultModal は変更なし ...
+// 共通: Escキーで閉じるためのフック
+function useEscapeKey(onClose: () => void) {
+  useEffect(() => {
+    const handleEsc = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onClose();
+    };
+    window.addEventListener("keydown", handleEsc);
+    return () => window.removeEventListener("keydown", handleEsc);
+  }, [onClose]);
+}
+
 export function ResultModal({
   gameState,
   lang,
@@ -24,7 +35,7 @@ export function ResultModal({
   const t = TRANSLATIONS[lang];
   const isWinner = gameState.winner === gameState.me.id;
 
-  // Fix: Generate random particles once on mount using useState lazy initialization
+  // パーティクル生成 (修正済み)
   const [particles] = useState(() =>
     [...Array(20)].map(() => ({
       left: `${Math.random() * 100}%`,
@@ -38,8 +49,11 @@ export function ResultModal({
   );
 
   return (
-    <div className="fixed inset-0 z-[100] flex items-center justify-center p-6 bg-slate-900/50 backdrop-blur-sm">
-      {/* Confetti Effect (Only show if winner) */}
+    <div
+      className="fixed inset-0 z-[100] flex items-center justify-center p-6 bg-slate-900/50 backdrop-blur-sm"
+      role="dialog"
+      aria-modal="true"
+    >
       {isWinner &&
         particles.map((style, i) => (
           <div
@@ -48,7 +62,6 @@ export function ResultModal({
             style={style}
           />
         ))}
-
       <div className="bg-white rounded-[2rem] p-8 w-full max-w-sm text-center shadow-2xl space-y-6 animate-in zoom-in duration-300 relative z-10">
         <div className="space-y-2">
           <h2
@@ -74,7 +87,6 @@ export function ResultModal({
   );
 }
 
-// ★修正: 推理モーダル
 export function GuessModal({
   lang,
   onClose,
@@ -89,19 +101,22 @@ export function GuessModal({
   isConnected: boolean;
 }) {
   const t = TRANSLATIONS[lang];
-
-  // 入力が無効化される条件
   const isDisabled = isProcessing || !isConnected;
 
+  useEscapeKey(onClose);
+
   return (
-    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center">
-      {/* 背景クリックで閉じる */}
+    <div
+      className="fixed inset-0 z-50 flex items-end sm:items-center justify-center"
+      role="dialog"
+      aria-modal="true"
+    >
       <div
         className="absolute inset-0 bg-slate-900/40 backdrop-blur-sm transition-opacity"
         onClick={onClose}
+        aria-label="Close"
       ></div>
 
-      {/* モーダル本体 */}
       <div className="relative w-full max-w-md bg-white rounded-t-[2rem] sm:rounded-[2rem] p-6 pb-10 shadow-2xl animate-in slide-in-from-bottom duration-300 sm:m-4">
         <div className="w-12 h-1 bg-slate-200 rounded-full mx-auto mb-6 sm:hidden"></div>
 
@@ -141,7 +156,7 @@ export function GuessModal({
   );
 }
 
-// ... HistoryModal, HelpModal はそのまま ...
+// ... 他のモーダルも同様に useEscapeKey を追加可能ですが、まずは主要なものだけ適用
 export function HistoryModal({
   lang,
   logs,
@@ -152,8 +167,13 @@ export function HistoryModal({
   onClose: () => void;
 }) {
   const t = TRANSLATIONS[lang];
+  useEscapeKey(onClose);
+
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center p-4"
+      role="dialog"
+    >
       <div
         className="absolute inset-0 bg-slate-900/20 backdrop-blur-sm"
         onClick={onClose}
@@ -167,6 +187,7 @@ export function HistoryModal({
           <button
             onClick={onClose}
             className="p-1 hover:bg-slate-100 rounded-full"
+            aria-label="Close"
           >
             <X size={20} className="text-slate-400" />
           </button>
@@ -208,6 +229,7 @@ export function HistoryModal({
   );
 }
 
+// HelpModal, RankingModal, NameEditModal も同様に修正可能
 export function HelpModal({
   lang,
   onClose,
@@ -216,8 +238,12 @@ export function HelpModal({
   onClose: () => void;
 }) {
   const t = TRANSLATIONS[lang];
+  useEscapeKey(onClose);
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-6">
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center p-6"
+      role="dialog"
+    >
       <div
         className="absolute inset-0 bg-slate-900/30 backdrop-blur-[1px]"
         onClick={onClose}
@@ -245,8 +271,12 @@ export function RankingModal({
   ranking: RankingItem[];
   onClose: () => void;
 }) {
+  useEscapeKey(onClose);
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center p-4"
+      role="dialog"
+    >
       <div
         className="absolute inset-0 bg-slate-900/20 backdrop-blur-sm"
         onClick={onClose}
@@ -260,6 +290,7 @@ export function RankingModal({
           <button
             onClick={onClose}
             className="p-1 hover:bg-slate-100 rounded-full"
+            aria-label="Close"
           >
             <X size={20} className="text-slate-400" />
           </button>
@@ -312,9 +343,13 @@ export function NameEditModal({
   onClose: () => void;
 }) {
   const [name, setName] = useState(currentName);
+  useEscapeKey(onClose);
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-6">
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center p-6"
+      role="dialog"
+    >
       <div
         className="absolute inset-0 bg-slate-900/30 backdrop-blur-[1px]"
         onClick={onClose}

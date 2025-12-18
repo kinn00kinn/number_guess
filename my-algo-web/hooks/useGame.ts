@@ -1,31 +1,112 @@
-import { useState, useRef, useEffect, useCallback } from "react";
+// hooks/useGame.ts
+import { useState, useRef, useEffect, useCallback, useReducer } from "react";
 import { GameState, Card, LogItem, Lang, User } from "@/types";
 import { WS_URL, TRANSLATIONS } from "@/utils/constant";
+import { useToast } from "@/components/Toast";
+import { playSe, vibrate } from "@/utils/effects";
+
+// --- Types & Reducer ---
+
+type GameAction =
+  | { type: "RESET" }
+  | { type: "JOINED"; payload: boolean }
+  | { type: "SET_GAME_STATE"; payload: GameState | null }
+  | { type: "SET_PROCESSING"; payload: boolean }
+  | { type: "SET_CONNECTED"; payload: boolean }
+  | { type: "SET_HAS_MOVED"; payload: boolean }
+  | { type: "SET_SEARCHING"; payload: boolean }
+  | { type: "ADD_LOG"; payload: { text: string; type: LogItem["type"] } }
+  | {
+      type: "SET_LAST_ATTACK";
+      payload: {
+        targetIndex: number;
+        guess: number;
+        isYourCard: boolean;
+      } | null;
+    }
+  | {
+      type: "SET_GUESS_MODAL";
+      payload: { show: boolean; targetIndex: number };
+    };
+
+type State = {
+  joined: boolean;
+  gameState: GameState | null;
+  isProcessing: boolean;
+  isConnected: boolean;
+  hasMoved: boolean;
+  isSearching: boolean;
+  gameLogs: LogItem[];
+  lastAttack: {
+    targetIndex: number;
+    guess: number;
+    isYourCard: boolean;
+  } | null;
+  guessModal: { show: boolean; targetIndex: number };
+};
+
+const initialState: State = {
+  joined: false,
+  gameState: null,
+  isProcessing: false,
+  isConnected: false,
+  hasMoved: false,
+  isSearching: false,
+  gameLogs: [],
+  lastAttack: null,
+  guessModal: { show: false, targetIndex: -1 },
+};
+
+function gameReducer(state: State, action: GameAction): State {
+  switch (action.type) {
+    case "RESET":
+      return { ...initialState };
+    case "JOINED":
+      return { ...state, joined: action.payload };
+    case "SET_GAME_STATE":
+      return { ...state, gameState: action.payload };
+    case "SET_PROCESSING":
+      return { ...state, isProcessing: action.payload };
+    case "SET_CONNECTED":
+      return { ...state, isConnected: action.payload };
+    case "SET_HAS_MOVED":
+      return { ...state, hasMoved: action.payload };
+    case "SET_SEARCHING":
+      return { ...state, isSearching: action.payload };
+    case "ADD_LOG":
+      return {
+        ...state,
+        gameLogs: [
+          { ...action.payload, timestamp: Date.now() },
+          ...state.gameLogs,
+        ],
+      };
+    case "SET_LAST_ATTACK":
+      return { ...state, lastAttack: action.payload };
+    case "SET_GUESS_MODAL":
+      return { ...state, guessModal: action.payload };
+    default:
+      return state;
+  }
+}
+
+// --- Hook ---
 
 export function useGame(lang: Lang, user: User | null) {
   const t = TRANSLATIONS[lang];
+  const { toasts, showToast, removeToast } = useToast();
 
   const [roomId, setRoomId] = useState("");
-  const [joined, setJoined] = useState(false);
-  const [gameState, setGameState] = useState<GameState | null>(null);
-  const [isProcessing, setIsProcessing] = useState(false);
-  const [isConnected, setIsConnected] = useState(false);
-  const [hasMoved, setHasMoved] = useState(false);
-  const [gameLogs, setGameLogs] = useState<LogItem[]>([]);
+  // isReconnecting は UI に「再接続中...」と出すために追加
+  const [isReconnecting, setIsReconnecting] = useState(false);
 
-  const [isSearching, setIsSearching] = useState(false);
+  const [state, dispatch] = useReducer(gameReducer, initialState);
 
-  // 直近の攻撃情報（吹き出し表示用）
-  const [lastAttack, setLastAttack] = useState<{
-    targetIndex: number;
-    guess: number;
-    isYourCard: boolean; // trueなら「自分の手札」の上に表示、falseなら「相手の手札」
-  } | null>(null);
-
-  const [guessModal, setGuessModal] = useState<{
-    show: boolean;
-    targetIndex: number;
-  }>({ show: false, targetIndex: -1 });
+  // Ref to access state inside callbacks/effects
+  const stateRef = useRef(state);
+  useEffect(() => {
+    stateRef.current = state;
+  }, [state]);
 
   const wsRef = useRef<WebSocket | null>(null);
   const pingIntervalRef = useRef<NodeJS.Timeout | null>(null);
@@ -34,20 +115,12 @@ export function useGame(lang: Lang, user: User | null) {
 
   const joinGameRef = useRef<(id: string) => void>(() => {});
   const guessModalClosingRef = useRef(false);
-  const guessModalRef = useRef(guessModal);
-  const prevGameStateRef = useRef<GameState | null>(null);
-  const joinedRef = useRef(joined);
 
-  useEffect(() => {
-    guessModalRef.current = guessModal;
-  }, [guessModal]);
-  useEffect(() => {
-    joinedRef.current = joined;
-  }, [joined]);
+  // --- Helpers ---
 
   const addLog = useCallback(
     (text: string, type: LogItem["type"] = "system") => {
-      setGameLogs((prev) => [{ text, type, timestamp: Date.now() }, ...prev]);
+      dispatch({ type: "ADD_LOG", payload: { text, type } });
     },
     []
   );
@@ -61,6 +134,7 @@ export function useGame(lang: Lang, user: User | null) {
     }
   }, []);
 
+  // Cleanup on unmount
   useEffect(() => {
     return () => {
       shouldReconnectRef.current = false;
@@ -69,13 +143,16 @@ export function useGame(lang: Lang, user: User | null) {
   }, [cleanupConnection]);
 
   const startProcessing = () => {
-    setIsProcessing(true);
+    dispatch({ type: "SET_PROCESSING", payload: true });
     if (timeoutRef.current) clearTimeout(timeoutRef.current);
-    timeoutRef.current = setTimeout(() => setIsProcessing(false), 3000);
+    timeoutRef.current = setTimeout(
+      () => dispatch({ type: "SET_PROCESSING", payload: false }),
+      3000
+    );
   };
 
   const stopProcessing = () => {
-    setIsProcessing(false);
+    dispatch({ type: "SET_PROCESSING", payload: false });
     if (timeoutRef.current) clearTimeout(timeoutRef.current);
   };
 
@@ -91,27 +168,35 @@ export function useGame(lang: Lang, user: User | null) {
     }
   }, []);
 
+  // --- WebSocket Logic ---
+
   const joinGame = useCallback(
     (id: string) => {
       if (!id) return;
       shouldReconnectRef.current = true;
       cleanupConnection();
 
+      // ローディング/再接続中表示
+      setIsReconnecting(true);
+
       const ws = new WebSocket(`${WS_URL}/game/${id}`);
       wsRef.current = ws;
 
       ws.onopen = () => {
-        setIsConnected(true);
-        // URLからクエリパラメータを解析して mode: "cpu" を付与
+        setIsReconnecting(false); // 接続成功で消す
+        dispatch({ type: "SET_CONNECTED", payload: true });
+
         const isCpu = id.includes("cpu=true");
-        sendMessage({ 
-          type: "JOIN", 
+        sendMessage({
+          type: "JOIN",
           mode: isCpu ? "cpu" : undefined,
           userId: user?.id,
-          userName: user?.name
+          userName: user?.name,
         });
-        setJoined(true);
-        setHasMoved(false);
+
+        dispatch({ type: "JOINED", payload: true });
+        dispatch({ type: "SET_HAS_MOVED", payload: false });
+
         pingIntervalRef.current = setInterval(
           () => sendMessage({ type: "PING" }),
           3000
@@ -121,23 +206,29 @@ export function useGame(lang: Lang, user: User | null) {
       ws.onmessage = (event) => {
         try {
           const data = JSON.parse(event.data);
+
           if (data.type === "PONG") {
-            setIsConnected(true);
+            dispatch({ type: "SET_CONNECTED", payload: true });
             return;
           }
 
-          // ★★★ 修正ポイント: 相手からの攻撃通知を受信して表示する ★★★
+          // 相手からの攻撃通知
           if (data.type === "ATTACK_NOTIFY") {
-            // attackerId が自分でない場合 ＝ 相手が自分を攻撃してきた
-            const myId = prevGameStateRef.current?.me.id;
+            const myId = stateRef.current.gameState?.me.id;
             const isMe = data.attackerId === myId;
 
             if (!isMe) {
-              // 相手視点の targetIndex は、自分視点では「自分の手札のindex」
-              setLastAttack({
-                targetIndex: data.targetIndex,
-                guess: data.guess,
-                isYourCard: true, // 自分のカードに吹き出しを出す
+              // 攻撃された！
+              vibrate([50, 50, 50]);
+              playSe("defense"); // 防御アラート音
+
+              dispatch({
+                type: "SET_LAST_ATTACK",
+                payload: {
+                  targetIndex: data.targetIndex,
+                  guess: data.guess,
+                  isYourCard: true,
+                },
               });
 
               addLog(
@@ -150,59 +241,65 @@ export function useGame(lang: Lang, user: User | null) {
           }
 
           if (data.type === "UPDATE_STATE") {
-            const prev = prevGameStateRef.current;
+            const prev = stateRef.current.gameState;
+            const next = data;
 
+            // ログとSE判定
             if (prev) {
-              // ログ: 自分の手札が開いた (守備失敗)
-              if (prev.me && data.me) {
-                data.me.hand.forEach((c: Card, idx: number) => {
-                  const prevCard = prev.me.hand[idx];
-                  if (prevCard && !prevCard.isOpen && c.isOpen) {
+              // 自分の手札が開いた (守備失敗)
+              if (prev.me && next.me) {
+                next.me.hand.forEach((c: Card, idx: number) => {
+                  if (!prev.me.hand[idx]?.isOpen && c.isOpen) {
                     addLog(t.logRevealed, "defense");
+                    playSe("lose"); // ダメージ音
                   }
                 });
               }
-              // ログ: 相手の手札が開いた (攻撃成功)
-              if (prev.opponentHand && data.opponentHand) {
-                data.opponentHand.forEach((c: Card, idx: number) => {
-                  const prevCard = prev.opponentHand[idx];
-                  if (prevCard && !prevCard.isOpen && c.isOpen) {
+              // 相手の手札が開いた (攻撃成功)
+              if (prev.opponentHand && next.opponentHand) {
+                next.opponentHand.forEach((c: Card, idx: number) => {
+                  if (!prev.opponentHand[idx]?.isOpen && c.isOpen) {
                     addLog(t.logRevealed, "attack");
+                    playSe("select"); // 成功音
                   }
                 });
               }
 
-              const isMyTurnNow = data.turnPlayerId === data.me.id;
+              const isMyTurnNow = next.turnPlayerId === next.me.id;
               const wasMyTurn = prev.turnPlayerId === prev.me.id;
 
-              // ターンが自分に回ってきた時だけリセット
               if (!wasMyTurn && isMyTurnNow) {
-                setHasMoved(false);
-                // 注意: ここで setLastAttack(null) をしないことで、
-                // 相手が間違えた時の「5?」という表示を残したまま自分のターンを開始できる
+                dispatch({ type: "SET_HAS_MOVED", payload: false });
+                vibrate(200); // 自分のターン開始で振動
+                playSe("select"); // ターン開始音
               }
             }
 
-            prevGameStateRef.current = data;
-            setGameState(data);
+            dispatch({ type: "SET_GAME_STATE", payload: next });
             stopProcessing();
 
             // モーダル制御
-            const gm = guessModalRef.current;
+            const gm = stateRef.current.guessModal;
             if (gm.show && gm.targetIndex >= 0) {
-              if (data.opponentHand?.[gm.targetIndex]?.isOpen) {
-                setGuessModal({ show: false, targetIndex: -1 });
+              if (next.opponentHand?.[gm.targetIndex]?.isOpen) {
+                dispatch({
+                  type: "SET_GUESS_MODAL",
+                  payload: { show: false, targetIndex: -1 },
+                });
               }
             }
-            if (data.phase === "playing" && data.turnPlayerId !== data.me.id) {
-              setGuessModal({ show: false, targetIndex: -1 });
+            if (next.phase === "playing" && next.turnPlayerId !== next.me.id) {
+              dispatch({
+                type: "SET_GUESS_MODAL",
+                payload: { show: false, targetIndex: -1 },
+              });
             }
           }
 
           if (data.type === "ERROR") {
-            alert(data.message);
+            showToast(data.message, "error"); // Toastに変更
             stopProcessing();
-            setJoined(false);
+            dispatch({ type: "JOINED", payload: false });
             shouldReconnectRef.current = false;
           }
         } catch (e) {
@@ -211,38 +308,43 @@ export function useGame(lang: Lang, user: User | null) {
       };
 
       ws.onclose = () => {
-        setIsConnected(false);
+        dispatch({ type: "SET_CONNECTED", payload: false });
         stopProcessing();
         if (pingIntervalRef.current) clearInterval(pingIntervalRef.current);
-        
-        // 意図的な切断（shouldReconnectRef.current = false）でない場合のみ再接続
-        if (shouldReconnectRef.current && joinedRef.current) {
-          // 再接続の頻度を少し下げる（3秒 -> 5秒）
+
+        if (shouldReconnectRef.current && stateRef.current.joined) {
+          setIsReconnecting(true); // 切断時は再接続中を表示
           setTimeout(() => {
             if (shouldReconnectRef.current) {
               joinGameRef.current(id);
             }
           }, 5000);
         } else {
-          setJoined(false);
-          setGameState(null);
+          setIsReconnecting(false);
+          dispatch({ type: "JOINED", payload: false });
+          dispatch({ type: "SET_GAME_STATE", payload: null });
         }
       };
     },
-    [cleanupConnection, sendMessage, addLog, lang, t, user?.id, user?.name]
+    [cleanupConnection, sendMessage, addLog, lang, t, user, showToast]
   );
 
   const joinRanked = useCallback(() => {
     shouldReconnectRef.current = true;
     cleanupConnection();
-    setIsSearching(true);
+    dispatch({ type: "SET_SEARCHING", payload: true });
 
     const ws = new WebSocket(`${WS_URL}/match/random`);
     wsRef.current = ws;
 
     ws.onopen = () => {
-      setIsConnected(true);
-      addLog(lang === "ja" ? "対戦相手を探しています..." : "Searching for opponent...", "system");
+      dispatch({ type: "SET_CONNECTED", payload: true });
+      addLog(
+        lang === "ja"
+          ? "対戦相手を探しています..."
+          : "Searching for opponent...",
+        "system"
+      );
     };
 
     ws.onmessage = (event) => {
@@ -251,107 +353,103 @@ export function useGame(lang: Lang, user: User | null) {
         if (data.type === "MATCH_FOUND") {
           const { roomId, mode } = data;
           ws.close();
-          setIsSearching(false);
-          // ランクマッチなので ?ranked=true を付与
-          // CPU戦の場合は ?cpu=true&ranked=true になるように調整
+          dispatch({ type: "SET_SEARCHING", payload: false });
           const params = new URLSearchParams();
           params.set("ranked", "true");
-          if (mode === "cpu") {
-            params.set("cpu", "true");
-          }
+          if (mode === "cpu") params.set("cpu", "true");
           joinGame(`${roomId}?${params.toString()}`);
         }
       } catch (e) {
         console.error(e);
       }
     };
-    
+
     ws.onclose = () => {
-      // マッチング中の切断は再接続しない（キャンセル扱い）
-      setIsConnected(false);
-      setIsSearching(false);
+      dispatch({ type: "SET_CONNECTED", payload: false });
+      dispatch({ type: "SET_SEARCHING", payload: false });
     };
   }, [cleanupConnection, joinGame, addLog, lang]);
 
   const cancelSearch = useCallback(() => {
-    if (wsRef.current) {
-      wsRef.current.close();
-    }
-    setIsSearching(false);
+    if (wsRef.current) wsRef.current.close();
+    dispatch({ type: "SET_SEARCHING", payload: false });
   }, []);
 
   useEffect(() => {
     joinGameRef.current = joinGame;
   }, [joinGame]);
 
+  const setGuessModal = (payload: { show: boolean; targetIndex: number }) => {
+    dispatch({ type: "SET_GUESS_MODAL", payload });
+  };
+
   const handleAttack = useCallback(
     (guess: number) => {
-      if (isProcessing) return;
-      const targetIndex = guessModal.targetIndex;
+      if (stateRef.current.isProcessing) return;
+      const targetIndex = stateRef.current.guessModal.targetIndex;
 
       guessModalClosingRef.current = true;
-      setGuessModal({ show: false, targetIndex: -1 });
+      dispatch({
+        type: "SET_GUESS_MODAL",
+        payload: { show: false, targetIndex: -1 },
+      });
       setTimeout(() => (guessModalClosingRef.current = false), 500);
 
       startProcessing();
 
-      // 自分が攻撃した時は即座にローカルステートを更新
-      setLastAttack({
-        targetIndex,
-        guess,
-        isYourCard: false, // 相手のカードへの攻撃
+      dispatch({
+        type: "SET_LAST_ATTACK",
+        payload: { targetIndex, guess, isYourCard: false },
       });
 
       const success = sendMessage({ type: "ATTACK", targetIndex, guess });
       if (success) {
-        setHasMoved(true);
+        dispatch({ type: "SET_HAS_MOVED", payload: true });
         addLog(
           t.logAttacked
             .replace("{i}", `${targetIndex + 1}`)
             .replace("{n}", `${guess}`),
           "attack"
         );
+        playSe("attack"); // 攻撃SE
       } else {
         stopProcessing();
       }
     },
-    [guessModal, isProcessing, sendMessage, addLog, t]
+    [sendMessage, addLog, t]
   );
 
   const handleStay = useCallback(() => {
-    if (isProcessing) return;
-    if (!hasMoved) return; // 攻撃していないならStay不可
+    if (stateRef.current.isProcessing) return;
+    if (!stateRef.current.hasMoved) return;
 
     startProcessing();
     const success = sendMessage({ type: "STAY" });
     if (success) {
       addLog(lang === "ja" ? "パスしました" : "Passed turn", "defense");
-      // 自分がパスしたら、自分の攻撃表示は消してOK
-      setLastAttack(null);
+      dispatch({ type: "SET_LAST_ATTACK", payload: null });
+      playSe("select"); // 決定音
     } else {
       stopProcessing();
     }
-  }, [isProcessing, sendMessage, addLog, lang, hasMoved]);
+  }, [sendMessage, addLog, lang]);
 
   return {
     roomId,
     setRoomId,
-    joined,
-    setJoined,
-    gameState,
-    isProcessing,
-    isConnected,
-    hasMoved,
-    gameLogs,
-    lastAttack,
-    guessModal,
+    // state spread
+    ...state,
+    isReconnecting, // 追加
+    // methods
     setGuessModal,
     joinGame,
     joinRanked,
     cancelSearch,
-    isSearching,
     handleAttack,
     handleStay,
     guessModalClosingRef,
+    // toast methods to expose if needed by components
+    toasts,
+    removeToast,
   };
 }

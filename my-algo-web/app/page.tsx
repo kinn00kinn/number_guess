@@ -166,10 +166,13 @@ export default function Home() {
                 isMyTurn={isMyTurn}
                 isProcessing={isProcessing}
                 isConnected={isConnected}
+                isReconnecting={game.isReconnecting} // 追加
                 hasMoved={hasMoved}
                 gameLogs={gameLogs}
                 lastAttack={lastAttack}
                 onStay={handleStay}
+                toasts={game.toasts} // 追加
+                removeToast={game.removeToast} // 追加
                 onCardClick={(index) => {
                   if (guessModalClosingRef.current) return;
                   const card = gameState.opponentHand[index];

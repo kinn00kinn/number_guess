@@ -43,20 +43,21 @@ const authApp = new Hono<{ Bindings: Bindings }>();
 
 // 1. Google Auth Middlewareの設定
 // /auth/google へのアクセスで自動的にGoogleへリダイレクト
-// /auth/callback へのアクセスでトークン交換とユーザー情報取得を実行
-authApp.use(
-  "/google",
-  googleAuth({
+authApp.use("/google", async (c, next) => {
+  return googleAuth({
+    client_id: c.env.GOOGLE_CLIENT_ID,
+    client_secret: c.env.GOOGLE_CLIENT_SECRET,
     scope: ["openid", "email", "profile"],
-  })
-);
+  })(c, next);
+});
 
-authApp.use(
-  "/callback",
-  googleAuth({
+authApp.use("/callback", async (c, next) => {
+  return googleAuth({
+    client_id: c.env.GOOGLE_CLIENT_ID,
+    client_secret: c.env.GOOGLE_CLIENT_SECRET,
     scope: ["openid", "email", "profile"],
-  }),
-  async (c) => {
+  })(c, next);
+}, async (c) => {
     const userGoogle = c.get("user-google");
     if (!userGoogle) {
       return c.text("Failed to get user info", 400);

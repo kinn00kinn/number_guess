@@ -18,7 +18,9 @@ type Bindings = {
 const getSessionCookieOptions = (c: Context<{ Bindings: Bindings }>) => {
   // 環境変数またはリクエストURLから判定
   const isSecure =
-    c.env.COOKIE_SECURE === true || c.env.COOKIE_SECURE === "true";
+    c.env.COOKIE_SECURE === true ||
+    c.env.COOKIE_SECURE === "true" ||
+    new URL(c.req.url).protocol === "https:";
 
   // クロスサイト(FrontendとBackendのドメインが違う)場合、SameSite=Noneが必須
   // ただし、NoneにするにはSecure=trueが必須
@@ -48,7 +50,8 @@ const getSessionCookieOptions = (c: Context<{ Bindings: Bindings }>) => {
 export const googleAuth = async (c: Context<{ Bindings: Bindings }>) => {
   const clientId = c.env.GOOGLE_CLIENT_ID;
   // 環境変数からコールバックURLを作成 (hostヘッダー依存を排除)
-  const redirectUri = `${c.env.BACKEND_URL}/auth/callback`;
+  const backendUrl = c.env.BACKEND_URL || new URL(c.req.url).origin;
+  const redirectUri = `${backendUrl}/auth/callback`;
 
   const params = new URLSearchParams({
     client_id: clientId,
@@ -73,7 +76,8 @@ export const googleCallback = async (c: Context<{ Bindings: Bindings }>) => {
     const clientId = c.env.GOOGLE_CLIENT_ID;
     const clientSecret = c.env.GOOGLE_CLIENT_SECRET;
     // Auth時と全く同じ文字列である必要があります
-    const redirectUri = `${c.env.BACKEND_URL}/auth/callback`;
+    const backendUrl = c.env.BACKEND_URL || new URL(c.req.url).origin;
+    const redirectUri = `${backendUrl}/auth/callback`;
 
     // 1. Token Exchange
     const tokenResponse = await fetch("https://oauth2.googleapis.com/token", {

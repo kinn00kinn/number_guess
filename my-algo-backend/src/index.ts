@@ -13,6 +13,8 @@ type Bindings = {
   GOOGLE_CLIENT_SECRET: string;
   GOOGLE_REDIRECT_URI: string;
   FRONTEND_URL: string;
+  BACKEND_URL: string;
+  COOKIE_SECURE?: string | boolean;
 };
 
 const app = new Hono<{ Bindings: Bindings }>();
@@ -21,8 +23,8 @@ app.use(
   "/*",
   cors({
     origin: (origin) => origin,
-    allowHeaders: ["Content-Type", "Upgrade"],
-    allowMethods: ["GET", "POST", "PUT", "OPTIONS"],
+    allowHeaders: ["Content-Type", "Upgrade", "Authorization"],
+    allowMethods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
     credentials: true,
   })
 );
@@ -67,6 +69,16 @@ app.get("/match/random", async (c) => {
   
   const newReq = new Request(url.toString(), c.req.raw);
   return stub.fetch(newReq);
+});
+
+app.get("/debug", (c) => {
+  return c.json({
+    backend_url: c.env.BACKEND_URL || "undefined",
+    frontend_url: c.env.FRONTEND_URL || "undefined",
+    // シークレットは見せないように長さだけ表示
+    has_client_id: !!c.env.GOOGLE_CLIENT_ID,
+    cookie_secure: c.env.COOKIE_SECURE === true || c.env.COOKIE_SECURE === "true",
+  });
 });
 
 export default app;

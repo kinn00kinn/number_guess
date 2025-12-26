@@ -1,50 +1,41 @@
 import { Context } from "hono";
 import { setCookie, getCookie, deleteCookie } from "hono/cookie";
 
-// --- 共通ヘルパー: 環境判定とCookieオプションの統一 ---
-
-// プロトコルと環境判定
-const getEnvInfo = (c: Context) => {
-  const host = c.req.header("host") || "";
-
-  // Cloudflare等のプロキシヘッダーを確認 (カンマ区切りの場合もあるのでincludesで判定)
-  const forwardedProto = c.req.header("x-forwarded-proto") || "";
-  const isHttps = forwardedProto.includes("https");
-
-  // ローカル環境判定 (localhost または IPアドレス)
-  const isLocal =
-    host.startsWith("localhost") ||
-    host.startsWith("127.0.0.1") ||
-    host.startsWith("[::1]") ||
-    host.match(/^192\.168\./);
-
-  // 本番(HTTPS)ならSecure必須、ローカルならfalse
-  // ※重要: Cloudflare Workers上では req.url は http になることがあるため、ヘッダー判定が必須
-  const secure = isHttps;
-
-  return { host, secure, isLocal };
+// 型定義
+type Bindings = {
+  DB: D1Database;
+  GOOGLE_CLIENT_ID: string;
+  GOOGLE_CLIENT_SECRET: string;
+  FRONTEND_URL: string;
+  BACKEND_URL: string;
+  // 環境変数で "true" / "false" 文字列として渡ってくる場合を考慮
+  COOKIE_SECURE?: string | boolean;
 };
 
-// Cookieオプションを生成する共通関数 (ログイン・ログアウトで必ず同じ設定を使うため)
-const getSessionCookieOptions = (c: Context) => {
-  const { secure, isLocal } = getEnvInfo(c);
+// --- Cookieオプション生成の共通化 ---
+// LoginとLogoutで完全に同じ設定を使うことが、削除トラブルを防ぐ唯一の方法です。
 
-  // クロスオリジン(フロントとバックが別ドメイン)通信を考慮した設定
-  // HTTPS環境(本番)なら SameSite=None; Secure
-  // HTTP環境(ローカル)なら SameSite=Lax
-  if (secure) {
+const getSessionCookieOptions = (c: Context<{ Bindings: Bindings }>) => {
+  // 環境変数またはリクエストURLから判定
+  const isSecure =
+    c.env.COOKIE_SECURE === true || c.env.COOKIE_SECURE === "true";
+
+  // クロスサイト(FrontendとBackendのドメインが違う)場合、SameSite=Noneが必須
+  // ただし、NoneにするにはSecure=trueが必須
+  if (isSecure) {
     return {
       httpOnly: true,
       secure: true,
-      sameSite: "None" as const, // クロスサイトでCookieを送るために必須
+      sameSite: "None" as const, // クロスドメインでCookieを送る設定
       path: "/",
-      partitioned: true, // ChromeのサードパーティCookie廃止(CHIPS)対応
+      partitioned: true, // ChromeのCHIPS対応 (将来的な必須対応)
     };
   } else {
+    // ローカル開発 (HTTP) 用
     return {
       httpOnly: true,
       secure: false,
-      sameSite: "Lax" as const, // ローカル環境(http)ではNoneは使えないためLax
+      sameSite: "Lax" as const, // HTTP環境ではNoneは使えないためLax
       path: "/",
       partitioned: false,
     };
@@ -53,35 +44,38 @@ const getSessionCookieOptions = (c: Context) => {
 
 // --- Route Handlers ---
 
-export const googleAuth = async (c: Context) => {
+// Google Auth Redirect
+export const googleAuth = async (c: Context<{ Bindings: Bindings }>) => {
   const clientId = c.env.GOOGLE_CLIENT_ID;
-  const { host, secure } = getEnvInfo(c);
+  // 環境変数からコールバックURLを作成 (hostヘッダー依存を排除)
+  const redirectUri = `${c.env.BACKEND_URL}/auth/callback`;
 
-  // リダイレクトURIの構築
-  const protocol = secure ? "https" : "http";
-  const redirectUri =
-    c.env.GOOGLE_REDIRECT_URI || `${protocol}://${host}/auth/callback`;
+  const params = new URLSearchParams({
+    client_id: clientId,
+    redirect_uri: redirectUri,
+    response_type: "code",
+    scope: "openid email profile",
+    access_type: "offline", // リフレッシュトークンが必要な場合は指定
+    prompt: "consent",
+  });
 
-  const url = `https://accounts.google.com/o/oauth2/v2/auth?client_id=${clientId}&redirect_uri=${redirectUri}&response_type=code&scope=openid%20email%20profile`;
-
-  return c.redirect(url);
+  return c.redirect(
+    `https://accounts.google.com/o/oauth2/v2/auth?${params.toString()}`
+  );
 };
 
-export const googleCallback = async (c: Context) => {
+// Google Auth Callback
+export const googleCallback = async (c: Context<{ Bindings: Bindings }>) => {
   try {
     const code = c.req.query("code");
     if (!code) return c.text("No code provided", 400);
 
     const clientId = c.env.GOOGLE_CLIENT_ID;
     const clientSecret = c.env.GOOGLE_CLIENT_SECRET;
+    // Auth時と全く同じ文字列である必要があります
+    const redirectUri = `${c.env.BACKEND_URL}/auth/callback`;
 
-    // Auth時と同じロジックでRedirect URIを構築
-    const { host, secure } = getEnvInfo(c);
-    const protocol = secure ? "https" : "http";
-    const redirectUri =
-      c.env.GOOGLE_REDIRECT_URI || `${protocol}://${host}/auth/callback`;
-
-    // 1. Googleからトークン取得
+    // 1. Token Exchange
     const tokenResponse = await fetch("https://oauth2.googleapis.com/token", {
       method: "POST",
       headers: { "Content-Type": "application/x-www-form-urlencoded" },
@@ -97,10 +91,10 @@ export const googleCallback = async (c: Context) => {
     const tokenData = (await tokenResponse.json()) as any;
     if (!tokenData.access_token) {
       console.error("Token Error:", tokenData);
-      return c.text(`Failed to get token: ${JSON.stringify(tokenData)}`, 400);
+      return c.text(`Failed to get token`, 400);
     }
 
-    // 2. ユーザー情報取得
+    // 2. User Info
     const userResponse = await fetch(
       "https://www.googleapis.com/oauth2/v2/userinfo",
       {
@@ -109,82 +103,67 @@ export const googleCallback = async (c: Context) => {
     );
     const userData = (await userResponse.json()) as any;
 
-    // 3. DB保存 (Upsert)
-    const db = c.env.DB as D1Database;
+    // 3. DB Upsert
+    const db = c.env.DB;
     let userId = "";
 
-    try {
-      const existingUser: any = await db
-        .prepare("SELECT id FROM users WHERE google_id = ?")
-        .bind(userData.id)
-        .first();
-      if (existingUser) {
-        userId = existingUser.id;
-      } else {
-        userId = crypto.randomUUID();
-        await db
-          .prepare("INSERT INTO users (id, google_id, name) VALUES (?, ?, ?)")
-          .bind(userId, userData.id, userData.name)
-          .run();
-      }
-    } catch (e: any) {
-      return c.text(`Database Error: ${e.message}`, 500);
+    // 既存ユーザー確認
+    const existingUser: any = await db
+      .prepare("SELECT id FROM users WHERE google_id = ?")
+      .bind(userData.id)
+      .first();
+
+    if (existingUser) {
+      userId = existingUser.id;
+    } else {
+      userId = crypto.randomUUID();
+      await db
+        .prepare("INSERT INTO users (id, google_id, name) VALUES (?, ?, ?)")
+        .bind(userId, userData.id, userData.name)
+        .run();
     }
 
-    // 4. Cookie保存 (重要: 共通オプションを使用)
+    // 4. Set Cookie
     const cookieOpts = getSessionCookieOptions(c);
-
-    // setCookieするときは maxAge を追加
     setCookie(c, "session_user_id", userId, {
       ...cookieOpts,
       maxAge: 60 * 60 * 24 * 7, // 7日間
     });
 
-    const frontendUrl = c.env.FRONTEND_URL || "http://localhost:3000";
-    return c.redirect(frontendUrl);
+    return c.redirect(c.env.FRONTEND_URL);
   } catch (e: any) {
     console.error("Callback Error:", e);
     return c.text(`Internal Server Error: ${e.message}`, 500);
   }
 };
 
-export const getMe = async (c: Context) => {
+// Get Me
+export const getMe = async (c: Context<{ Bindings: Bindings }>) => {
   const userId = getCookie(c, "session_user_id");
   if (!userId) return c.json({ error: "Not logged in" }, 401);
 
-  const db = c.env.DB as D1Database;
+  const db = c.env.DB;
   const user = await db
     .prepare("SELECT * FROM users WHERE id = ?")
     .bind(userId)
     .first();
 
-  if (!user) return c.json({ error: "User not found" }, 404);
+  if (!user) {
+    // クッキーはあるがDBにいない場合（開発中のDBリセットなど）はクッキーを消す
+    deleteCookie(c, "session_user_id", getSessionCookieOptions(c));
+    return c.json({ error: "User not found" }, 404);
+  }
+
   return c.json(user);
 };
 
-export const logout = async (c: Context) => {
-  // 5. ログアウト (重要: 保存時と同じオプションで削除)
+// Logout
+export const logout = async (c: Context<{ Bindings: Bindings }>) => {
   const cookieOpts = getSessionCookieOptions(c);
 
-  // メインの削除処理
+  // ログイン時と全く同じオプションを指定して削除します。
+  // これによりブラウザは「上書きして無効化」と認識します。
   deleteCookie(c, "session_user_id", cookieOpts);
-
-  // 念のための保険:
-  // もし開発中などに古い形式(属性違い)のCookieが残ってしまっていると
-  // 上記だけでは消えないことがあるため、属性を変えたパターンも空打ちしておく
-  // (これが前回の修正で「ログアウトできた」要因です)
-
-  if (cookieOpts.secure) {
-    // Secure環境なら、Partitionedなし版も消しておく
-    deleteCookie(c, "session_user_id", { ...cookieOpts, partitioned: false });
-  } else {
-    // Local環境なら、Secureあり版も念のため消しておく
-    deleteCookie(c, "session_user_id", {
-      ...cookieOpts,
-      secure: true,
-      sameSite: "None",
-    });
-  }
 
   return c.json({ success: true });
 };
@@ -209,3 +188,5 @@ export const getRanking = async (c: Context) => {
     .all();
   return c.json(results);
 };
+
+

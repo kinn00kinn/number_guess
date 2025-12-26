@@ -8,35 +8,31 @@ type Bindings = {
   GOOGLE_CLIENT_SECRET: string;
   FRONTEND_URL: string;
   BACKEND_URL: string;
-  // 環境変数で "true" / "false" 文字列として渡ってくる場合を考慮
   COOKIE_SECURE?: string | boolean;
 };
 
-// --- Cookieオプション生成の共通化 ---
-// LoginとLogoutで完全に同じ設定を使うことが、削除トラブルを防ぐ唯一の方法です。
-
+// --- Cookieオプションの共通化 (Login/Logoutで完全に一致させる) ---
 const getSessionCookieOptions = (c: Context<{ Bindings: Bindings }>) => {
-  const url = new URL(c.req.url);
-  // localhost または 127.0.0.1 の場合はローカル開発とみなす
-  const isLocal = url.hostname === "localhost" || url.hostname === "127.0.0.1";
+  // 環境変数でSecure判定 (文字の"true"も考慮)
+  const isSecure =
+    c.env.COOKIE_SECURE === true || c.env.COOKIE_SECURE === "true";
 
-  if (isLocal) {
-    // ローカル開発 (HTTP) 用
+  if (isSecure) {
+    // 本番環境 (HTTPS / Cross-Site)
+    return {
+      httpOnly: true,
+      secure: true,
+      sameSite: "None" as const, // クロスドメイン必須
+      path: "/",
+      partitioned: true, // ChromeのCHIPS対応
+    };
+  } else {
+    // ローカル開発 (HTTP)
     return {
       httpOnly: true,
       secure: false,
       sameSite: "Lax" as const,
       path: "/",
-    };
-  } else {
-    // 本番環境 (HTTPS / Cross-Site) 用
-    // フロントエンドとバックエンドが別ドメインの場合、SameSite=None; Secure が必須
-    return {
-      httpOnly: true,
-      secure: true,
-      sameSite: "None" as const,
-      path: "/",
-      partitioned: true, // ChromeのCHIPS対応
     };
   }
 };
@@ -46,16 +42,17 @@ const getSessionCookieOptions = (c: Context<{ Bindings: Bindings }>) => {
 // Google Auth Redirect
 export const googleAuth = async (c: Context<{ Bindings: Bindings }>) => {
   const clientId = c.env.GOOGLE_CLIENT_ID;
-  // 環境変数からコールバックURLを作成 (hostヘッダー依存を排除)
-  const backendUrl = c.env.BACKEND_URL || new URL(c.req.url).origin;
-  const redirectUri = `${backendUrl}/auth/callback`;
+
+  // 【重要】動的判定せず、必ず環境変数の BACKEND_URL を使う
+  // これにより undefined エラーや http/https の不一致を防ぐ
+  const redirectUri = `${c.env.BACKEND_URL}/auth/callback`;
 
   const params = new URLSearchParams({
     client_id: clientId,
     redirect_uri: redirectUri,
     response_type: "code",
     scope: "openid email profile",
-    access_type: "offline", // リフレッシュトークンが必要な場合は指定
+    access_type: "offline",
     prompt: "consent",
   });
 
@@ -72,9 +69,9 @@ export const googleCallback = async (c: Context<{ Bindings: Bindings }>) => {
 
     const clientId = c.env.GOOGLE_CLIENT_ID;
     const clientSecret = c.env.GOOGLE_CLIENT_SECRET;
-    // Auth時と全く同じ文字列である必要があります
-    const backendUrl = c.env.BACKEND_URL || new URL(c.req.url).origin;
-    const redirectUri = `${backendUrl}/auth/callback`;
+
+    // Auth時と完全に同じURIを指定する
+    const redirectUri = `${c.env.BACKEND_URL}/auth/callback`;
 
     // 1. Token Exchange
     const tokenResponse = await fetch("https://oauth2.googleapis.com/token", {
@@ -92,7 +89,7 @@ export const googleCallback = async (c: Context<{ Bindings: Bindings }>) => {
     const tokenData = (await tokenResponse.json()) as any;
     if (!tokenData.access_token) {
       console.error("Token Error:", tokenData);
-      return c.text(`Failed to get token`, 400);
+      return c.text(`Failed to get token: ${JSON.stringify(tokenData)}`, 400);
     }
 
     // 2. User Info
@@ -108,7 +105,6 @@ export const googleCallback = async (c: Context<{ Bindings: Bindings }>) => {
     const db = c.env.DB;
     let userId = "";
 
-    // 既存ユーザー確認
     const existingUser: any = await db
       .prepare("SELECT id FROM users WHERE google_id = ?")
       .bind(userData.id)
@@ -131,11 +127,22 @@ export const googleCallback = async (c: Context<{ Bindings: Bindings }>) => {
       maxAge: 60 * 60 * 24 * 7, // 7日間
     });
 
+    // フロントエンドへ戻る
     return c.redirect(c.env.FRONTEND_URL);
   } catch (e: any) {
     console.error("Callback Error:", e);
     return c.text(`Internal Server Error: ${e.message}`, 500);
   }
+};
+
+// Logout
+export const logout = async (c: Context<{ Bindings: Bindings }>) => {
+  const cookieOpts = getSessionCookieOptions(c);
+
+  // ログイン時と全く同じオプションで削除
+  deleteCookie(c, "session_user_id", cookieOpts);
+
+  return c.json({ success: true });
 };
 
 // Get Me
@@ -150,7 +157,6 @@ export const getMe = async (c: Context<{ Bindings: Bindings }>) => {
     .first();
 
   if (!user) {
-    // クッキーはあるがDBにいない場合（開発中のDBリセットなど）はクッキーを消す
     deleteCookie(c, "session_user_id", getSessionCookieOptions(c));
     return c.json({ error: "User not found" }, 404);
   }
@@ -158,18 +164,7 @@ export const getMe = async (c: Context<{ Bindings: Bindings }>) => {
   return c.json(user);
 };
 
-// Logout
-export const logout = async (c: Context<{ Bindings: Bindings }>) => {
-  const cookieOpts = getSessionCookieOptions(c);
-
-  // ログイン時と全く同じオプションを指定して削除します。
-  // これによりブラウザは「上書きして無効化」と認識します。
-  deleteCookie(c, "session_user_id", cookieOpts);
-
-  return c.json({ success: true });
-};
-
-// ... updateName, getRanking はそのまま ...
+// updateName, getRanking はそのままでOK
 export const updateName = async (c: Context) => {
   const userId = getCookie(c, "session_user_id");
   if (!userId) return c.json({ error: "Unauthorized" }, 401);
@@ -189,5 +184,3 @@ export const getRanking = async (c: Context) => {
     .all();
   return c.json(results);
 };
-
-

@@ -3,7 +3,7 @@ import { cors } from "hono/cors";
 import { getCookie } from "hono/cookie";
 import { AlgoRoom } from "./algoRoom";
 import { MatchMaker } from "./matchMaker";
-import { googleAuth, googleCallback, getMe, updateName, getRanking, logout } from "./auth";
+import { authApp, updateName, getRanking, COOKIE_NAME } from "./auth";
 
 type Bindings = {
   ALGO_ROOM: DurableObjectNamespace;
@@ -35,10 +35,7 @@ app.use("/*", async (c, next) => {
 });
 
 // Auth Routes
-app.get("/auth/google", googleAuth);
-app.get("/auth/callback", googleCallback);
-app.get("/auth/me", getMe);
-app.post("/auth/logout", logout);
+app.route("/auth", authApp);
 app.put("/user/name", updateName);
 app.get("/ranking", getRanking);
 
@@ -57,7 +54,7 @@ app.get("/game/:id", async (c) => {
 
 // Matchmaking Route
 app.get("/match/random", async (c) => {
-  const userId = getCookie(c, "session_user_id");
+  const userId = getCookie(c, COOKIE_NAME);
   if (!userId) {
     return c.json({ error: "Unauthorized" }, 401);
   }

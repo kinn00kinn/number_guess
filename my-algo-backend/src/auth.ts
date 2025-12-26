@@ -1,5 +1,6 @@
-import { Context } from "hono";
+import { Context, Hono } from "hono";
 import { setCookie, getCookie, deleteCookie } from "hono/cookie";
+import { googleAuth } from "@hono/oauth-providers/google";
 
 // 型定義
 type Bindings = {
@@ -11,103 +12,63 @@ type Bindings = {
   COOKIE_SECURE?: string | boolean;
 };
 
-// --- Cookieオプションの共通化 (Login/Logoutで完全に一致させる) ---
-const getSessionCookieOptions = (c: Context<{ Bindings: Bindings }>) => {
-  // 環境変数でSecure判定 (文字の"true"も考慮)
-  const isSecure =
-    c.env.COOKIE_SECURE === true || c.env.COOKIE_SECURE === "true";
+// --- Cookieオプション生成の共通化 ---
+const COOKIE_NAME = "__Secure-session_user_id";
 
-  if (isSecure) {
-    // 本番環境 (HTTPS / Cross-Site)
-    return {
-      httpOnly: true,
-      secure: true,
-      sameSite: "None" as const, // クロスドメイン必須
-      path: "/",
-      partitioned: true, // ChromeのCHIPS対応
-    };
-  } else {
-    // ローカル開発 (HTTP)
+const getSessionCookieOptions = (c: Context<{ Bindings: Bindings }>) => {
+  const url = new URL(c.req.url);
+  const isLocal = url.hostname === "localhost" || url.hostname === "127.0.0.1";
+
+  if (isLocal) {
     return {
       httpOnly: true,
       secure: false,
       sameSite: "Lax" as const,
       path: "/",
     };
+  } else {
+    return {
+      httpOnly: true,
+      secure: true,
+      sameSite: "None" as const,
+      path: "/",
+      partitioned: true,
+    };
   }
 };
 
-// --- Route Handlers ---
+// --- Auth App Definition ---
+// Honoのサブアプリとして定義し、index.tsでマウントする形にします
+const authApp = new Hono<{ Bindings: Bindings }>();
 
-// Google Auth Redirect
-export const googleAuth = async (c: Context<{ Bindings: Bindings }>) => {
-  const clientId = c.env.GOOGLE_CLIENT_ID;
+// 1. Google Auth Middlewareの設定
+// /auth/google へのアクセスで自動的にGoogleへリダイレクト
+// /auth/callback へのアクセスでトークン交換とユーザー情報取得を実行
+authApp.use(
+  "/google",
+  googleAuth({
+    scope: ["openid", "email", "profile"],
+  })
+);
 
-  // 【重要】動的判定せず、必ず環境変数の BACKEND_URL を使う
-  // これにより undefined エラーや http/https の不一致を防ぐ
-  const redirectUri = `${c.env.BACKEND_URL}/auth/callback`;
-
-  const params = new URLSearchParams({
-    client_id: clientId,
-    redirect_uri: redirectUri,
-    response_type: "code",
-    scope: "openid email profile",
-    access_type: "offline",
-    prompt: "consent",
-  });
-
-  return c.redirect(
-    `https://accounts.google.com/o/oauth2/v2/auth?${params.toString()}`
-  );
-};
-
-// Google Auth Callback
-export const googleCallback = async (c: Context<{ Bindings: Bindings }>) => {
-  try {
-    const code = c.req.query("code");
-    if (!code) return c.text("No code provided", 400);
-
-    const clientId = c.env.GOOGLE_CLIENT_ID;
-    const clientSecret = c.env.GOOGLE_CLIENT_SECRET;
-
-    // Auth時と完全に同じURIを指定する
-    const redirectUri = `${c.env.BACKEND_URL}/auth/callback`;
-
-    // 1. Token Exchange
-    const tokenResponse = await fetch("https://oauth2.googleapis.com/token", {
-      method: "POST",
-      headers: { "Content-Type": "application/x-www-form-urlencoded" },
-      body: new URLSearchParams({
-        code,
-        client_id: clientId,
-        client_secret: clientSecret,
-        redirect_uri: redirectUri,
-        grant_type: "authorization_code",
-      }),
-    });
-
-    const tokenData = (await tokenResponse.json()) as any;
-    if (!tokenData.access_token) {
-      console.error("Token Error:", tokenData);
-      return c.text(`Failed to get token: ${JSON.stringify(tokenData)}`, 400);
+authApp.use(
+  "/callback",
+  googleAuth({
+    scope: ["openid", "email", "profile"],
+  }),
+  async (c) => {
+    const userGoogle = c.get("user-google");
+    if (!userGoogle) {
+      return c.text("Failed to get user info", 400);
     }
 
-    // 2. User Info
-    const userResponse = await fetch(
-      "https://www.googleapis.com/oauth2/v2/userinfo",
-      {
-        headers: { Authorization: `Bearer ${tokenData.access_token}` },
-      }
-    );
-    const userData = (await userResponse.json()) as any;
-
-    // 3. DB Upsert
     const db = c.env.DB;
     let userId = "";
 
+    // 既存ユーザー確認
     const existingUser: any = await db
       .prepare("SELECT id FROM users WHERE google_id = ?")
-      .bind(userData.id)
+      .bind(userGoogle.id)
       .first();
 
     if (existingUser) {
@@ -116,57 +77,65 @@ export const googleCallback = async (c: Context<{ Bindings: Bindings }>) => {
       userId = crypto.randomUUID();
       await db
         .prepare("INSERT INTO users (id, google_id, name) VALUES (?, ?, ?)")
-        .bind(userId, userData.id, userData.name)
+        .bind(userId, userGoogle.id, userGoogle.name)
         .run();
     }
 
-    // 4. Set Cookie
+    // Cookie保存
     const cookieOpts = getSessionCookieOptions(c);
-    setCookie(c, "session_user_id", userId, {
+    setCookie(c, COOKIE_NAME, userId, {
       ...cookieOpts,
       maxAge: 60 * 60 * 24 * 7, // 7日間
     });
 
-    // フロントエンドへ戻る
-    return c.redirect(c.env.FRONTEND_URL);
-  } catch (e: any) {
-    console.error("Callback Error:", e);
-    return c.text(`Internal Server Error: ${e.message}`, 500);
+    // HTMLレスポンスで確実にCookieを保存させてから遷移
+    return c.html(`
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <meta charset="UTF-8">
+        <title>Redirecting...</title>
+      </head>
+      <body>
+        <p>Login successful. Redirecting...</p>
+        <script>
+          setTimeout(() => {
+            window.location.href = "${c.env.FRONTEND_URL}";
+          }, 100);
+        </script>
+      </body>
+      </html>
+    `);
   }
-};
+);
 
-// Logout
-export const logout = async (c: Context<{ Bindings: Bindings }>) => {
-  const cookieOpts = getSessionCookieOptions(c);
-
-  // ログイン時と全く同じオプションで削除
-  deleteCookie(c, "session_user_id", cookieOpts);
-
-  return c.json({ success: true });
-};
-
-// Get Me
-export const getMe = async (c: Context<{ Bindings: Bindings }>) => {
-  const userId = getCookie(c, "session_user_id");
+// 2. その他のAuthルート
+authApp.get("/me", async (c) => {
+  const userId = getCookie(c, COOKIE_NAME);
   if (!userId) return c.json({ error: "Not logged in" }, 401);
 
-  const db = c.env.DB;
-  const user = await db
-    .prepare("SELECT * FROM users WHERE id = ?")
+  const user = await c.env.DB.prepare("SELECT * FROM users WHERE id = ?")
     .bind(userId)
     .first();
 
   if (!user) {
-    deleteCookie(c, "session_user_id", getSessionCookieOptions(c));
+    deleteCookie(c, COOKIE_NAME, getSessionCookieOptions(c));
     return c.json({ error: "User not found" }, 404);
   }
-
   return c.json(user);
-};
+});
 
-// updateName, getRanking はそのままでOK
+authApp.post("/logout", async (c) => {
+  const cookieOpts = getSessionCookieOptions(c);
+  deleteCookie(c, COOKIE_NAME, cookieOpts);
+  return c.json({ success: true });
+});
+
+export { authApp, getSessionCookieOptions, COOKIE_NAME };
+
+// 互換性のために古い関数もエクスポートしておく（index.tsの修正が終わるまで）
 export const updateName = async (c: Context) => {
-  const userId = getCookie(c, "session_user_id");
+  const userId = getCookie(c, COOKIE_NAME);
   if (!userId) return c.json({ error: "Unauthorized" }, 401);
   const { name } = await c.req.json<{ name: string }>();
   const db = c.env.DB as D1Database;
@@ -184,3 +153,4 @@ export const getRanking = async (c: Context) => {
     .all();
   return c.json(results);
 };
+

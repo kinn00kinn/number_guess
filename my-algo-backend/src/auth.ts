@@ -16,30 +16,27 @@ type Bindings = {
 // LoginとLogoutで完全に同じ設定を使うことが、削除トラブルを防ぐ唯一の方法です。
 
 const getSessionCookieOptions = (c: Context<{ Bindings: Bindings }>) => {
-  // 環境変数またはリクエストURLから判定
-  const isSecure =
-    c.env.COOKIE_SECURE === true ||
-    c.env.COOKIE_SECURE === "true" ||
-    new URL(c.req.url).protocol === "https:";
+  const url = new URL(c.req.url);
+  // localhost または 127.0.0.1 の場合はローカル開発とみなす
+  const isLocal = url.hostname === "localhost" || url.hostname === "127.0.0.1";
 
-  // クロスサイト(FrontendとBackendのドメインが違う)場合、SameSite=Noneが必須
-  // ただし、NoneにするにはSecure=trueが必須
-  if (isSecure) {
-    return {
-      httpOnly: true,
-      secure: true,
-      sameSite: "None" as const, // クロスドメインでCookieを送る設定
-      path: "/",
-      partitioned: true, // ChromeのCHIPS対応 (将来的な必須対応)
-    };
-  } else {
+  if (isLocal) {
     // ローカル開発 (HTTP) 用
     return {
       httpOnly: true,
       secure: false,
-      sameSite: "Lax" as const, // HTTP環境ではNoneは使えないためLax
+      sameSite: "Lax" as const,
       path: "/",
-      partitioned: false,
+    };
+  } else {
+    // 本番環境 (HTTPS / Cross-Site) 用
+    // フロントエンドとバックエンドが別ドメインの場合、SameSite=None; Secure が必須
+    return {
+      httpOnly: true,
+      secure: true,
+      sameSite: "None" as const,
+      path: "/",
+      partitioned: true, // ChromeのCHIPS対応
     };
   }
 };

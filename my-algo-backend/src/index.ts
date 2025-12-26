@@ -19,15 +19,20 @@ type Bindings = {
 
 const app = new Hono<{ Bindings: Bindings }>();
 
-app.use(
-  "/*",
-  cors({
-    origin: (origin) => origin,
+app.use("/*", async (c, next) => {
+  const corsMiddleware = cors({
+    origin: [
+      c.env.FRONTEND_URL,
+      "http://localhost:3000",
+      "http://localhost:5173",
+      "https://my-algo-web.pages.dev", // 念のためハードコードも追加
+    ],
     allowHeaders: ["Content-Type", "Upgrade", "Authorization"],
     allowMethods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
     credentials: true,
-  })
-);
+  });
+  return corsMiddleware(c, next);
+});
 
 // Auth Routes
 app.get("/auth/google", googleAuth);

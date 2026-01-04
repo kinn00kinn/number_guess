@@ -19,35 +19,29 @@ type Bindings = {
 
 const app = new Hono<{ Bindings: Bindings }>();
 
-// CORS設定の修正
-app.use("/*", async (c, next) => {
-  const corsMiddleware = cors({
-    origin: (origin) => {
-      // 許可するオリジンのリスト
-      const allowedOrigins = [
-        c.env.FRONTEND_URL, // 環境変数 (https://my-algo-web.pages.dev)
-        "http://localhost:3000",
-        "http://localhost:5173",
-        "https://my-algo-web.pages.dev",
-      ];
+app.use("/*", cors({
+  origin: (origin, c) => {
+    // 許可するオリジンのリスト
+    const allowedOrigins = [
+      c.env.FRONTEND_URL, // e.g. https://my-algo-web.pages.dev
+      "http://localhost:3000",
+      "http://localhost:5173",
+    ];
 
-      // 末尾のスラッシュ有無の揺れを吸収するため、部分一致や正規化を検討しても良いが
-      // ここでは完全一致またはリストに含まれるかで判定
-      if (allowedOrigins.includes(origin)) {
-        return origin;
-      }
-      // 環境変数が読み込めていない場合などのフォールバック
-      if (origin && origin.endsWith(".pages.dev")) {
-        return origin;
-      }
-      return origin; // 開発中は便宜上すべて許可する場合 (本番では厳密にすべき)
-    },
-    allowHeaders: ["Content-Type", "Upgrade", "Authorization", "Cookie"], // Cookieを追加
-    allowMethods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
-    credentials: true,
-  });
-  return corsMiddleware(c, next);
-});
+    if (allowedOrigins.includes(origin)) {
+      return origin;
+    }
+    // Allow Cloudflare Pages preview URLs
+    if (origin.endsWith(".pages.dev")) {
+      return origin;
+    }
+    // Disallow all other origins
+    return undefined;
+  },
+  allowHeaders: ["Content-Type", "Upgrade", "Authorization"],
+  allowMethods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+  credentials: true,
+}));
 
 // Auth Routes
 app.route("/auth", authApp);

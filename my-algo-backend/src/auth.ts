@@ -44,7 +44,7 @@ const getSessionCookieOptions = (c: Context<{ Bindings: Bindings }>) => {
       secure: true,
       sameSite: "None" as const,
       path: "/",
-      // `Partitioned` は一部環境で未対応か挙動が厳しいため除去する
+      Partitioned: true,
     };
   }
 };

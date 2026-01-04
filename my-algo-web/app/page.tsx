@@ -62,6 +62,7 @@ export default function Home() {
         const res = await fetch(`${API_URL}/auth/me`, {
           headers,
           credentials: "include",
+          mode: "cors", // 明示的にCORSモードを指定
         });
         
         if (res.ok) {

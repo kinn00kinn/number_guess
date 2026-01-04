@@ -53,7 +53,8 @@ export default function Home() {
   }, [fetchUserTrigger]);
 
   const fetchRanking = useCallback(() => {
-    fetch(`${API_URL}/ranking`)
+    // ★ ここにも cache: "no-store" を推奨
+    fetch(`${API_URL}/ranking`, { cache: "no-store" })
       .then((res) => res.json())
       .then(setRanking)
       .catch(console.error);
@@ -66,6 +67,7 @@ export default function Home() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ name }),
         credentials: "include",
+        cache: "no-store",
       });
       if (res.ok) {
         refetchUser();

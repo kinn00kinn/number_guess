@@ -49,6 +49,30 @@ const getSessionCookieOptions = (c: Context<{ Bindings: Bindings }>) => {
   }
 };
 
+// --- Auth Helper ---
+export const getUserId = (c: Context): string | undefined => {
+  // 1. Authorization Header (Bearer token)
+  const authHeader = c.req.header("Authorization");
+  if (authHeader && authHeader.startsWith("Bearer ")) {
+    return authHeader.substring(7);
+  }
+
+  // 2. Cookie
+  const cookieId = getCookie(c, COOKIE_NAME);
+  if (cookieId) {
+    return cookieId;
+  }
+
+  // 3. Query Parameter (for WebSockets)
+  const url = new URL(c.req.url);
+  const queryToken = url.searchParams.get("token");
+  if (queryToken) {
+    return queryToken;
+  }
+
+  return undefined;
+};
+
 // --- Auth App Definition ---
 const authApp = new Hono<{ Bindings: Bindings }>();
 
@@ -130,6 +154,8 @@ authApp.get(
     });
 
     // フロントエンドへリダイレクト
+    // TokenをURLパラメータに付与して、Cookieが使えない環境(Safari等)でも
+    // フロントエンド側でlocalStorageに保存できるようにする
     return c.html(`
       <!DOCTYPE html>
       <html>
@@ -141,7 +167,7 @@ authApp.get(
         <p>Login successful. Redirecting...</p>
         <script>
           setTimeout(() => {
-            window.location.href = "${c.env.FRONTEND_URL}";
+            window.location.href = "${c.env.FRONTEND_URL}?token=${userId}";
           }, 100);
         </script>
       </body>
@@ -152,7 +178,7 @@ authApp.get(
 
 // 2. その他のAuthルート
 authApp.get("/me", async (c) => {
-  const userId = getCookie(c, COOKIE_NAME);
+  const userId = getUserId(c);
   if (!userId) return c.json({ error: "Not logged in" }, 401);
 
   const user = await c.env.DB.prepare("SELECT * FROM users WHERE id = ?")
@@ -176,7 +202,7 @@ export { authApp, getSessionCookieOptions, COOKIE_NAME };
 
 // 互換性のために古い関数もエクスポート
 export const updateName = async (c: Context) => {
-  const userId = getCookie(c, COOKIE_NAME);
+  const userId = getUserId(c);
   if (!userId) return c.json({ error: "Unauthorized" }, 401);
   const { name } = await c.req.json<{ name: string }>();
   const db = c.env.DB as D1Database;

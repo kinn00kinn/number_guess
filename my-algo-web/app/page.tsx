@@ -34,14 +34,45 @@ export default function Home() {
   const [fetchUserTrigger, setFetchUserTrigger] = useState(0);
   const refetchUser = () => setFetchUserTrigger((c) => c + 1);
 
+  // ★ Token handling from URL
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const params = new URLSearchParams(window.location.search);
+    const token = params.get("token");
+    if (token) {
+      localStorage.setItem("auth_token", token);
+      // URLからtokenを消す
+      const newUrl = window.location.pathname;
+      window.history.replaceState({}, "", newUrl);
+      // ユーザー再取得
+      refetchUser();
+    }
+  }, []);
+
   useEffect(() => {
     const doFetchUser = async () => {
       setIsUserLoading(true);
       try {
+        const token = localStorage.getItem("auth_token");
+        const headers: HeadersInit = {};
+        if (token) {
+          headers["Authorization"] = `Bearer ${token}`;
+        }
+
         const res = await fetch(`${API_URL}/auth/me`, {
+          headers,
           credentials: "include",
         });
-        setUser(res.ok ? await res.json() : null);
+        
+        if (res.ok) {
+          setUser(await res.json());
+        } else {
+          // トークンが無効なら削除
+          if (res.status === 401) {
+            localStorage.removeItem("auth_token");
+          }
+          setUser(null);
+        }
       } catch (error) {
         console.error("Failed to fetch user:", error);
         setUser(null);
@@ -62,9 +93,15 @@ export default function Home() {
 
   const handleUpdateName = async (name: string) => {
     try {
+      const token = localStorage.getItem("auth_token");
+      const headers: HeadersInit = { "Content-Type": "application/json" };
+      if (token) {
+        headers["Authorization"] = `Bearer ${token}`;
+      }
+
       const res = await fetch(`${API_URL}/user/name`, {
         method: "PUT",
-        headers: { "Content-Type": "application/json" },
+        headers,
         body: JSON.stringify({ name }),
         credentials: "include",
         cache: "no-store",
@@ -83,6 +120,7 @@ export default function Home() {
       method: "POST",
       credentials: "include",
     });
+    localStorage.removeItem("auth_token");
     setUser(null);
     window.location.reload();
   };

@@ -12,6 +12,18 @@ type Bindings = {
   COOKIE_SECURE?: string | boolean;
 };
 
+// Google Auth User Type
+type GoogleUser = {
+  id: string;
+  email: string;
+  verified_email: boolean;
+  name: string;
+  given_name: string;
+  family_name: string;
+  picture: string;
+  locale: string;
+};
+
 // --- Cookieオプション生成の共通化 ---
 const COOKIE_NAME = "__Secure-session_user_id";
 
@@ -38,27 +50,44 @@ const getSessionCookieOptions = (c: Context<{ Bindings: Bindings }>) => {
 };
 
 // --- Auth App Definition ---
-// Honoのサブアプリとして定義し、index.tsでマウントする形にします
 const authApp = new Hono<{ Bindings: Bindings }>();
 
 // 1. Google Auth Middlewareの設定
-// /auth/google へのアクセスで自動的にGoogleへリダイレクト
-authApp.use("/google", async (c, next) => {
-  return googleAuth({
-    client_id: c.env.GOOGLE_CLIENT_ID,
-    client_secret: c.env.GOOGLE_CLIENT_SECRET,
-    scope: ["openid", "email", "profile"],
-  })(c, next);
-});
+// redirect_uri を明示的に指定して、/google ではなく /callback に戻るようにする
 
-authApp.use("/callback", async (c, next) => {
-  return googleAuth({
-    client_id: c.env.GOOGLE_CLIENT_ID,
-    client_secret: c.env.GOOGLE_CLIENT_SECRET,
-    scope: ["openid", "email", "profile"],
-  })(c, next);
-}, async (c) => {
-    const userGoogle = c.get("user-google");
+authApp.get(
+  "/google",
+  async (c, next) => {
+    // 末尾のスラッシュ有無を考慮してURLを結合
+    const backendUrl = c.env.BACKEND_URL.replace(/\/$/, "");
+    const redirectUri = `${backendUrl}/auth/callback`;
+
+    const auth = googleAuth({
+      client_id: c.env.GOOGLE_CLIENT_ID,
+      client_secret: c.env.GOOGLE_CLIENT_SECRET,
+      redirect_uri: redirectUri, // ★ここを追加
+      scope: ["openid", "email", "profile"],
+    });
+    return auth(c, next);
+  }
+);
+
+authApp.get(
+  "/callback",
+  async (c, next) => {
+    const backendUrl = c.env.BACKEND_URL.replace(/\/$/, "");
+    const redirectUri = `${backendUrl}/auth/callback`;
+
+    const auth = googleAuth({
+      client_id: c.env.GOOGLE_CLIENT_ID,
+      client_secret: c.env.GOOGLE_CLIENT_SECRET,
+      redirect_uri: redirectUri, // ★ここも同様に追加（必須）
+      scope: ["openid", "email", "profile"],
+    });
+    return auth(c, next);
+  },
+  async (c) => {
+    const userGoogle = c.get("user-google") as GoogleUser | undefined;
     if (!userGoogle) {
       return c.text("Failed to get user info", 400);
     }
@@ -67,19 +96,24 @@ authApp.use("/callback", async (c, next) => {
     let userId = "";
 
     // 既存ユーザー確認
-    const existingUser: any = await db
+    const existingUser = await db
       .prepare("SELECT id FROM users WHERE google_id = ?")
       .bind(userGoogle.id)
-      .first();
+      .first<{ id: string }>();
 
     if (existingUser) {
       userId = existingUser.id;
     } else {
       userId = crypto.randomUUID();
-      await db
-        .prepare("INSERT INTO users (id, google_id, name) VALUES (?, ?, ?)")
-        .bind(userId, userGoogle.id, userGoogle.name)
-        .run();
+      try {
+        await db
+          .prepare("INSERT INTO users (id, google_id, name) VALUES (?, ?, ?)")
+          .bind(userId, userGoogle.id, userGoogle.name)
+          .run();
+      } catch (e) {
+        console.error("Failed to insert user", e);
+        return c.text("Database Error", 500);
+      }
     }
 
     // Cookie保存
@@ -89,7 +123,7 @@ authApp.use("/callback", async (c, next) => {
       maxAge: 60 * 60 * 24 * 7, // 7日間
     });
 
-    // HTMLレスポンスで確実にCookieを保存させてから遷移
+    // フロントエンドへリダイレクト
     return c.html(`
       <!DOCTYPE html>
       <html>
@@ -134,7 +168,7 @@ authApp.post("/logout", async (c) => {
 
 export { authApp, getSessionCookieOptions, COOKIE_NAME };
 
-// 互換性のために古い関数もエクスポートしておく（index.tsの修正が終わるまで）
+// 互換性のために古い関数もエクスポート
 export const updateName = async (c: Context) => {
   const userId = getCookie(c, COOKIE_NAME);
   if (!userId) return c.json({ error: "Unauthorized" }, 401);
@@ -154,4 +188,3 @@ export const getRanking = async (c: Context) => {
     .all();
   return c.json(results);
 };
-

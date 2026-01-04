@@ -31,5 +31,10 @@
       "database_name": "my-algo-db",
       "database_id": "e725297e-fb02-4c93-a6db-49a8caf25aa3"
     }
-  ]
+  ],
+  "vars": {
+    "FRONTEND_URL": "https://my-algo-web.pages.dev",
+    "BACKEND_URL": "https://my-algo-backend.haruki1009kk.workers.dev",
+    "COOKIE_SECURE": "true"
+  }
 }

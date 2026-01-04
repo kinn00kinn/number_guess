@@ -44,7 +44,7 @@ const getSessionCookieOptions = (c: Context<{ Bindings: Bindings }>) => {
       secure: true,
       sameSite: "None" as const,
       path: "/",
-      partitioned: true,
+      // `Partitioned` は一部環境で未対応か挙動が厳しいため除去する
     };
   }
 };
@@ -55,22 +55,19 @@ const authApp = new Hono<{ Bindings: Bindings }>();
 // 1. Google Auth Middlewareの設定
 // redirect_uri を明示的に指定して、/google ではなく /callback に戻るようにする
 
-authApp.get(
-  "/google",
-  async (c, next) => {
-    // 末尾のスラッシュ有無を考慮してURLを結合
-    const backendUrl = c.env.BACKEND_URL.replace(/\/$/, "");
-    const redirectUri = `${backendUrl}/auth/callback`;
+authApp.get("/google", async (c, next) => {
+  // 末尾のスラッシュ有無を考慮してURLを結合
+  const backendUrl = c.env.BACKEND_URL.replace(/\/$/, "");
+  const redirectUri = `${backendUrl}/auth/callback`;
 
-    const auth = googleAuth({
-      client_id: c.env.GOOGLE_CLIENT_ID,
-      client_secret: c.env.GOOGLE_CLIENT_SECRET,
-      redirect_uri: redirectUri, // ★ここを追加
-      scope: ["openid", "email", "profile"],
-    });
-    return auth(c, next);
-  }
-);
+  const auth = googleAuth({
+    client_id: c.env.GOOGLE_CLIENT_ID,
+    client_secret: c.env.GOOGLE_CLIENT_SECRET,
+    redirect_uri: redirectUri, // ★ここを追加
+    scope: ["openid", "email", "profile"],
+  });
+  return auth(c, next);
+});
 
 authApp.get(
   "/callback",
@@ -87,8 +84,17 @@ authApp.get(
     return auth(c, next);
   },
   async (c) => {
-    const userGoogle = c.get("user-google") as GoogleUser | undefined;
+    // 一部の oauth プロバイダ実装ではキー名が異なる場合があるため、
+    // 代表的な候補を順に参照してフォールバックする
+    const userGoogle =
+      ((c as any).get("user-google") as GoogleUser | undefined) ||
+      ((c as any).get("user") as GoogleUser | undefined) ||
+      ((c as any).get("google-user") as GoogleUser | undefined);
+
     if (!userGoogle) {
+      console.error("auth callback: no user info found on context", {
+        url: c.req.url,
+      });
       return c.text("Failed to get user info", 400);
     }
 

@@ -34,45 +34,37 @@ export default function Home() {
   const [fetchUserTrigger, setFetchUserTrigger] = useState(0);
   const refetchUser = () => setFetchUserTrigger((c) => c + 1);
 
-  // ★ Token handling from URL
-  useEffect(() => {
-    if (typeof window === "undefined") return;
-    const params = new URLSearchParams(window.location.search);
-    const token = params.get("token");
-    if (token) {
-      localStorage.setItem("auth_token", token);
-      // URLからtokenを消す
-      const newUrl = window.location.pathname;
-      window.history.replaceState({}, "", newUrl);
-      // ユーザー再取得
-      refetchUser();
-    }
-  }, []);
-
   useEffect(() => {
     const doFetchUser = async () => {
       setIsUserLoading(true);
       try {
-        const token = localStorage.getItem("auth_token");
-        const headers: HeadersInit = {};
-        if (token) {
-          headers["Authorization"] = `Bearer ${token}`;
-        }
-
-        const res = await fetch(`${API_URL}/auth/me`, {
-          headers,
+        // Auth.js uses a session cookie, so we just need to make a credentialed request
+        const res = await fetch(`${API_URL}/api/auth/session`, {
           credentials: "include",
-          mode: "cors", // 明示的にCORSモードを指定
-          cache: "no-store", // 認証状態の取得なのでキャッシュを無効化
+          mode: "cors",
+          cache: "no-store",
         });
-        
+
         if (res.ok) {
-          setUser(await res.json());
-        } else {
-          // トークンが無効なら削除
-          if (res.status === 401) {
-            localStorage.removeItem("auth_token");
+          const session = await res.json();
+          // The session object is empty if not logged in
+          if (session && session.user) {
+            // To maintain compatibility with the rest of the app, we need to
+            // get the full user object from our own DB.
+            const meRes = await fetch(`${API_URL}/me`, {
+              credentials: "include",
+              mode: "cors",
+              cache: "no-store",
+            });
+            if (meRes.ok) {
+              setUser(await meRes.json());
+            } else {
+               setUser(null);
+            }
+          } else {
+            setUser(null);
           }
+        } else {
           setUser(null);
         }
       } catch (error) {
@@ -95,15 +87,9 @@ export default function Home() {
 
   const handleUpdateName = async (name: string) => {
     try {
-      const token = localStorage.getItem("auth_token");
-      const headers: HeadersInit = { "Content-Type": "application/json" };
-      if (token) {
-        headers["Authorization"] = `Bearer ${token}`;
-      }
-
       const res = await fetch(`${API_URL}/user/name`, {
         method: "PUT",
-        headers,
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ name }),
         credentials: "include",
         cache: "no-store",
@@ -117,14 +103,9 @@ export default function Home() {
     }
   };
 
-  const handleLogout = async () => {
-    await fetch(`${API_URL}/auth/logout`, {
-      method: "POST",
-      credentials: "include",
-    });
-    localStorage.removeItem("auth_token");
-    setUser(null);
-    window.location.reload();
+  const handleLogout = () => {
+    // Redirecting to the signout page is the simplest way to handle cross-origin signout
+    window.location.href = `${API_URL}/api/auth/signout`;
   };
   // ... (ここまで変更なし) ...
 

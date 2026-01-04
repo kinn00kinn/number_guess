@@ -179,11 +179,7 @@ export function useGame(lang: Lang, user: User | null) {
       // ローディング/再接続中表示
       setIsReconnecting(true);
 
-      const token = localStorage.getItem("auth_token");
       const wsUrl = new URL(`${WS_URL}/game/${id}`);
-      if (token) {
-        wsUrl.searchParams.set("token", token);
-      }
 
       const ws = new WebSocket(wsUrl.toString());
       wsRef.current = ws;
@@ -340,11 +336,7 @@ export function useGame(lang: Lang, user: User | null) {
     cleanupConnection();
     dispatch({ type: "SET_SEARCHING", payload: true });
 
-    const token = localStorage.getItem("auth_token");
     const wsUrl = new URL(`${WS_URL}/match/random`);
-    if (token) {
-      wsUrl.searchParams.set("token", token);
-    }
 
     const ws = new WebSocket(wsUrl.toString());
     wsRef.current = ws;

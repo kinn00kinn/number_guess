@@ -1,222 +1,76 @@
-import { Context, Hono } from "hono";
-import { setCookie, getCookie, deleteCookie } from "hono/cookie";
-import { googleAuth } from "@hono/oauth-providers/google";
+import { Hono } from 'hono'
+import { authHandler, initAuthConfig, verifyAuth } from '@hono/auth-js'
+import Google from '@auth/core/providers/google'
+import type { User as AuthUser } from '@auth/core/types'
 
-// 型定義
+// Type definition for the Bindings
 type Bindings = {
   DB: D1Database;
   GOOGLE_CLIENT_ID: string;
   GOOGLE_CLIENT_SECRET: string;
+  AUTH_SECRET: string; // New secret for Auth.js
   FRONTEND_URL: string;
   BACKEND_URL: string;
-  COOKIE_SECURE?: string | boolean;
 };
 
-// Google Auth User Type
-type GoogleUser = {
-  id: string;
-  email: string;
-  verified_email: boolean;
-  name: string;
-  given_name: string;
-  family_name: string;
-  picture: string;
-  locale: string;
-};
+// Define a custom user type that includes the ID
+export type AppUser = AuthUser & { id: string };
 
-// --- Cookieオプション生成の共通化 ---
-const COOKIE_NAME = "__Secure-session_user_id";
-
-const getSessionCookieOptions = (c: Context<{ Bindings: Bindings }>) => {
-  const url = new URL(c.req.url);
-  const isLocal = url.hostname === "localhost" || url.hostname === "127.0.0.1";
-
-  if (isLocal) {
-    return {
-      httpOnly: true,
-      secure: false,
-      sameSite: "Lax" as const,
-      path: "/",
-    };
-  } else {
-    return {
-      httpOnly: true,
-      secure: true,
-      sameSite: "None" as const,
-      path: "/",
-      Partitioned: true,
-    };
-  }
-};
-
-// --- Auth Helper ---
-export const getUserId = (c: Context): string | undefined => {
-  // 1. Authorization Header (Bearer token)
-  const authHeader = c.req.header("Authorization");
-  if (authHeader && authHeader.startsWith("Bearer ")) {
-    return authHeader.substring(7);
-  }
-
-  // 2. Cookie
-  const cookieId = getCookie(c, COOKIE_NAME);
-  if (cookieId) {
-    return cookieId;
-  }
-
-  // 3. Query Parameter (for WebSockets)
-  const url = new URL(c.req.url);
-  const queryToken = url.searchParams.get("token");
-  if (queryToken) {
-    return queryToken;
-  }
-
-  return undefined;
-};
-
-// --- Auth App Definition ---
 const authApp = new Hono<{ Bindings: Bindings }>();
 
-// 1. Google Auth Middlewareの設定
-// redirect_uri を明示的に指定して、/google ではなく /callback に戻るようにする
-
-authApp.get("/google", async (c, next) => {
-  // 末尾のスラッシュ有無を考慮してURLを結合
-  const backendUrl = c.env.BACKEND_URL.replace(/\/$/, "");
-  const redirectUri = `${backendUrl}/auth/callback`;
-
-  const auth = googleAuth({
-    client_id: c.env.GOOGLE_CLIENT_ID,
-    client_secret: c.env.GOOGLE_CLIENT_SECRET,
-    redirect_uri: redirectUri, // ★ここを追加
-    scope: ["openid", "email", "profile"],
-  });
-  return auth(c, next);
-});
-
-authApp.get(
-  "/callback",
-  async (c, next) => {
-    const backendUrl = c.env.BACKEND_URL.replace(/\/$/, "");
-    const redirectUri = `${backendUrl}/auth/callback`;
-
-    const auth = googleAuth({
-      client_id: c.env.GOOGLE_CLIENT_ID,
-      client_secret: c.env.GOOGLE_CLIENT_SECRET,
-      redirect_uri: redirectUri, // ★ここも同様に追加（必須）
-      scope: ["openid", "email", "profile"],
-    });
-    return auth(c, next);
-  },
-  async (c) => {
-    // 一部の oauth プロバイダ実装ではキー名が異なる場合があるため、
-    // 代表的な候補を順に参照してフォールバックする
-    const userGoogle =
-      ((c as any).get("user-google") as GoogleUser | undefined) ||
-      ((c as any).get("user") as GoogleUser | undefined) ||
-      ((c as any).get("google-user") as GoogleUser | undefined);
-
-    if (!userGoogle) {
-      console.error("auth callback: no user info found on context", {
-        url: c.req.url,
-      });
-      return c.text("Failed to get user info", 400);
-    }
-
-    const db = c.env.DB;
-    let userId = "";
-
-    // 既存ユーザー確認
-    const existingUser = await db
-      .prepare("SELECT id FROM users WHERE google_id = ?")
-      .bind(userGoogle.id)
-      .first<{ id: string }>();
-
-    if (existingUser) {
-      userId = existingUser.id;
-    } else {
-      userId = crypto.randomUUID();
-      try {
-        await db
-          .prepare("INSERT INTO users (id, google_id, name) VALUES (?, ?, ?)")
-          .bind(userId, userGoogle.id, userGoogle.name)
-          .run();
-      } catch (e) {
-        console.error("Failed to insert user", e);
-        return c.text("Database Error", 500);
+// 1. Initialize Auth.js configuration
+authApp.use('*', initAuthConfig(c => ({
+  secret: c.env.AUTH_SECRET,
+  providers: [
+    Google({
+      clientId: c.env.GOOGLE_CLIENT_ID,
+      clientSecret: c.env.GOOGLE_CLIENT_SECRET,
+    }),
+  ],
+  callbacks: {
+    // This callback is used to persist the user ID from the provider into the JWT session
+    async session({ session, token }) {
+      if (session?.user && token?.sub) {
+        session.user.id = token.sub; // token.sub is the user's ID from the provider (Google ID)
       }
-    }
+      return session;
+    },
+    // After a user signs in, we either find them in our DB or create a new entry
+    async signIn({ user, account, profile }) {
+      if (account?.provider === 'google' && profile?.sub) {
+        const db = c.env.DB;
+        const googleId = profile.sub;
 
-    // Cookie保存
-    const cookieOpts = getSessionCookieOptions(c);
-    setCookie(c, COOKIE_NAME, userId, {
-      ...cookieOpts,
-      maxAge: 60 * 60 * 24 * 7, // 7日間
-    });
+        // Check if user already exists
+        const existingUser = await db
+          .prepare('SELECT id FROM users WHERE google_id = ?')
+          .bind(googleId)
+          .first<{ id: string }>();
 
-    // フロントエンドへリダイレクト
-    // TokenをURLパラメータに付与して、Cookieが使えない環境(Safari等)でも
-    // フロントエンド側でlocalStorageに保存できるようにする
-    return c.html(`
-      <!DOCTYPE html>
-      <html>
-      <head>
-        <meta charset="UTF-8">
-        <title>Redirecting...</title>
-      </head>
-      <body>
-        <p>Login successful. Redirecting...</p>
-        <script>
-          setTimeout(() => {
-            window.location.href = "${c.env.FRONTEND_URL}?token=${userId}";
-          }, 100);
-        </script>
-      </body>
-      </html>
-    `);
-  }
-);
+        if (!existingUser) {
+          // Create new user if they don't exist
+          try {
+            const newUserId = crypto.randomUUID();
+            await db
+              .prepare('INSERT INTO users (id, google_id, name) VALUES (?, ?, ?)')
+              .bind(newUserId, googleId, profile.name || 'New User')
+              .run();
+          } catch (e) {
+            console.error('Failed to insert user', e);
+            return false; // Prevent sign-in if DB operation fails
+          }
+        }
+        return true; // Sign-in successful
+      }
+      return false; // Deny sign-in for other cases
+    },
+  },
+})));
 
-// 2. その他のAuthルート
-authApp.get("/me", async (c) => {
-  const userId = getUserId(c);
-  if (!userId) return c.json({ error: "Not logged in" }, 401);
+// 2. Define the auth routes (e.g., /api/auth/signin, /api/auth/callback, etc.)
+authApp.use('*', authHandler());
 
-  const user = await c.env.DB.prepare("SELECT * FROM users WHERE id = ?")
-    .bind(userId)
-    .first();
+// 3. Export a middleware to verify authentication on protected routes
+const requireAuth = () => verifyAuth();
 
-  if (!user) {
-    deleteCookie(c, COOKIE_NAME, getSessionCookieOptions(c));
-    return c.json({ error: "User not found" }, 404);
-  }
-  return c.json(user);
-});
-
-authApp.post("/logout", async (c) => {
-  const cookieOpts = getSessionCookieOptions(c);
-  deleteCookie(c, COOKIE_NAME, cookieOpts);
-  return c.json({ success: true });
-});
-
-export { authApp, getSessionCookieOptions, COOKIE_NAME };
-
-// 互換性のために古い関数もエクスポート
-export const updateName = async (c: Context) => {
-  const userId = getUserId(c);
-  if (!userId) return c.json({ error: "Unauthorized" }, 401);
-  const { name } = await c.req.json<{ name: string }>();
-  const db = c.env.DB as D1Database;
-  await db
-    .prepare("UPDATE users SET name = ? WHERE id = ?")
-    .bind(name, userId)
-    .run();
-  return c.json({ success: true });
-};
-
-export const getRanking = async (c: Context) => {
-  const db = c.env.DB as D1Database;
-  const { results } = await db
-    .prepare("SELECT name, rate, wins FROM users ORDER BY rate DESC LIMIT 100")
-    .all();
-  return c.json(results);
-};
+export { authApp, requireAuth };

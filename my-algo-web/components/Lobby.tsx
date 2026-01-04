@@ -39,7 +39,7 @@ export default function Lobby({
   };
 
   const handleLogin = () => {
-    window.location.href = `${API_URL}/auth/google`;
+    window.location.href = `${API_URL}/api/auth/signin/google`;
   };
 
   return (

@@ -63,6 +63,12 @@ export class AlgoRoom extends DurableObject {
 
   async fetch(request: Request): Promise<Response> {
     const url = new URL(request.url);
+
+    // Get user ID from the header added by the main app
+    const userId = request.headers.get("X-User-ID");
+    if (!userId) {
+      return new Response("Unauthorized: Missing X-User-ID header", { status: 401 });
+    }
     
     // CPU対戦フラグの確認
     if (url.searchParams.get("cpu") === "true") {
@@ -78,15 +84,11 @@ export class AlgoRoom extends DurableObject {
       return new Response("Expected Upgrade: websocket", { status: 426 });
     }
     const { 0: client, 1: server } = new WebSocketPair();
-    this.ctx.acceptWebSocket(server);
+    
+    // Associate the user ID with the server-side WebSocket right away
+    this.sessions.set(server, userId);
 
-    // CPUモードなら、最初の接続時にCPUをプレイヤーとして登録しておく（まだプレイヤーが0人の場合）
-    if (this.isCpuMode && this.state.players.length === 0) {
-       // プレイヤーが入ってきたタイミングでCPUを追加する処理は JOIN で行う方が安全
-       // ここではフラグだけ覚えておく手もあるが、URLパラメータはJOINメッセージには含まれないので
-       // セッションに紐付けるか、あるいはJOIN時にクライアントから送ってもらう。
-       // 今回はシンプルに、JOIN時に1人目がCPUモードで入ってきたら、即座にCPUも参加させるロジックにする。
-    }
+    this.ctx.acceptWebSocket(server);
 
     return new Response(null, { status: 101, webSocket: client });
   }
@@ -143,6 +145,12 @@ export class AlgoRoom extends DurableObject {
     const data = JSON.parse(message as string);
     const senderId = this.sessions.get(ws);
 
+    if (!senderId) {
+      // This socket is not associated with a user ID.
+      try { ws.close(1011, "User ID not found"); } catch(e) {}
+      return;
+    }
+
     if (data.type === "PING") {
       try {
         ws.send(JSON.stringify({ type: "PONG" }));
@@ -152,21 +160,10 @@ export class AlgoRoom extends DurableObject {
 
     // 1. JOIN
     if (data.type === "JOIN") {
-      // ユーザーIDの決定
-      const playerId = data.userId || `User-${Math.random().toString(36).slice(-4)}`;
-      let playerName = data.userName || playerId;
-
-      // DBから名前を取得 (userIdがUUID形式の場合のみ)
-      if (playerId.length > 20) { // 簡易チェック
-        try {
-          const user = await this.env.DB.prepare("SELECT name FROM users WHERE id = ?").bind(playerId).first<any>();
-          if (user && user.name) {
-            playerName = user.name;
-          }
-        } catch (e) {
-          // DBエラーは無視してデフォルト名を使う
-        }
-      }
+      // The user ID is now trusted as it comes from the session map.
+      const playerId = senderId;
+      // The client can suggest a name, but the ID is non-negotiable.
+      const playerName = data.userName || "Player";
 
       // 既に自分がいるか確認（再接続）
       const existingPlayer = this.state.players.find(p => p.id === playerId);
@@ -175,8 +172,6 @@ export class AlgoRoom extends DurableObject {
         ws.send(JSON.stringify({ type: "ERROR", message: "満員です" }));
         return;
       }
-
-      this.sessions.set(ws, playerId);
       
       if (!existingPlayer) {
         this.state.players.push({ id: playerId, name: playerName, hand: [], isCpu: false });
@@ -185,8 +180,7 @@ export class AlgoRoom extends DurableObject {
         existingPlayer.name = playerName;
       }
 
-      // CPUモード判定 (クライアントから送ってもらう or URLパラメータ)
-      // ここではクライアントが "cpu": true を送ってくると仮定、または1人目が待機中にタイムアウトでCPU戦になった場合
+      // CPUモード判定
       if ((data.mode === "cpu" || this.isCpuMode) && this.state.players.length === 1) {
          this.addCpuPlayer();
       }

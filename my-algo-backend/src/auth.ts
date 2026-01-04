@@ -128,10 +128,6 @@ authApp.get(
       ...cookieOpts,
       maxAge: 60 * 60 * 24 * 7, // 7日間
     });
-    c.header(
-      "Set-Cookie",
-      buildSetCookie("session_user_id", userId, cookieOpts)
-    );
 
     // フロントエンドへリダイレクト
     return c.html(`

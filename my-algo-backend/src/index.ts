@@ -20,24 +20,7 @@ type Bindings = {
 const app = new Hono<{ Bindings: Bindings }>();
 
 app.use("/*", cors({
-  origin: (origin, c) => {
-    // 許可するオリジンのリスト
-    const allowedOrigins = [
-      c.env.FRONTEND_URL, // e.g. https://my-algo-web.pages.dev
-      "http://localhost:3000",
-      "http://localhost:5173",
-    ];
-
-    if (allowedOrigins.includes(origin)) {
-      return origin;
-    }
-    // Allow Cloudflare Pages preview URLs
-    if (origin.endsWith(".pages.dev")) {
-      return origin;
-    }
-    // Disallow all other origins
-    return undefined;
-  },
+  origin: "https://my-algo-web.pages.dev",
   allowHeaders: ["Content-Type", "Upgrade", "Authorization"],
   allowMethods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
   credentials: true,

@@ -63,6 +63,7 @@ export default function Home() {
           headers,
           credentials: "include",
           mode: "cors", // 明示的にCORSモードを指定
+          cache: "no-store", // 認証状態の取得なのでキャッシュを無効化
         });
         
         if (res.ok) {

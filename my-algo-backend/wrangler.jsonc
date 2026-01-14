@@ -33,7 +33,7 @@
     }
   ],
   "vars": {
-    "FRONTEND_URL": "https://my-algo-web.pages.dev",
+    "FRONTEND_URL": "https://binarily.kinn-kinn.com",
     "BACKEND_URL": "https://my-algo-backend.haruki1009kk.workers.dev",
     "COOKIE_SECURE": "true"
   }

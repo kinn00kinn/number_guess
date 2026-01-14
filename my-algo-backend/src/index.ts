@@ -25,10 +25,10 @@ app.use("/*", async (c, next) => {
     origin: (origin) => {
       // 許可するオリジンのリスト
       const allowedOrigins = [
-        c.env.FRONTEND_URL, // 環境変数 (https://my-algo-web.pages.dev)
+        c.env.FRONTEND_URL, // 環境変数 (https://binarily.kinn-kinn.com)
         "http://localhost:3000",
         "http://localhost:5173",
-        "https://my-algo-web.pages.dev",
+        "https://binarily.kinn-kinn.com",
       ];
 
       // 末尾のスラッシュ有無の揺れを吸収するため、部分一致や正規化を検討しても良いが

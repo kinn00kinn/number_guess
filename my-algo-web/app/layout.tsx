@@ -14,15 +14,17 @@ const geistMono = Geist_Mono({
 
 export const metadata: Metadata = {
   title: "Algo Online",
-  description: "Deduce the numbers and outsmart your opponent in this logical card battle game.",
+  description:
+    "Deduce the numbers and outsmart your opponent in this logical card battle game.",
   openGraph: {
     title: "Algo Online",
-    description: "Deduce the numbers and outsmart your opponent in this logical card battle game.",
-    url: "https://my-algo-web.pages.dev",
+    description:
+      "Deduce the numbers and outsmart your opponent in this logical card battle game.",
+    url: "https://binarily.kinn-kinn.com",
     siteName: "Algo Online",
     images: [
       {
-        url: "https://my-algo-web.pages.dev/logo.svg", // Placeholder or real image
+        url: "https://binarily.kinn-kinn.com/logo.svg", // Placeholder or real image
         width: 1200,
         height: 630,
         alt: "Algo Online Game Board",
@@ -35,7 +37,7 @@ export const metadata: Metadata = {
     card: "summary_large_image",
     title: "Algo Online",
     description: "Join the battle of logic and deduction!",
-    images: ["https://my-algo-web.pages.dev/logo.svg"], // Placeholder
+    images: ["https://binarily.kinn-kinn.com/logo.svg"], // Placeholder
   },
 };
 

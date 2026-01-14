@@ -51,7 +51,7 @@ export default function GameHeader({
     <header className="px-6 py-4 flex items-center justify-between bg-slate-50/90 backdrop-blur-sm sticky top-0 z-30">
       <div className="flex items-center gap-3">
         <h1 className="text-xl font-black tracking-tighter text-slate-900 hidden sm:block">
-          Algo<span className="text-slate-400">.Online</span>
+          <img src="/logo.svg" alt="Logo" className="h-2 w-auto" />
         </h1>
         {joined && (
           <div

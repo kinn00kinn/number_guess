@@ -9,10 +9,12 @@ import {
   History,
   Trophy,
   Edit2,
+  Share2,
 } from "lucide-react";
 import { TRANSLATIONS } from "@/utils/constant";
 import { Lang, GameState, LogItem, RankingItem } from "@/types";
 import { useState, useEffect } from "react";
+import confetti from "canvas-confetti";
 
 // 共通: Escキーで閉じるためのフック
 function useEscapeKey(onClose: () => void) {
@@ -35,18 +37,57 @@ export function ResultModal({
   const t = TRANSLATIONS[lang];
   const isWinner = gameState.winner === gameState.me.id;
 
-  // パーティクル生成 (修正済み)
-  const [particles] = useState(() =>
-    [...Array(20)].map(() => ({
-      left: `${Math.random() * 100}%`,
-      top: `-10%`,
-      backgroundColor: ["#ff0", "#f0f", "#0ff", "#0f0"][
-        Math.floor(Math.random() * 4)
-      ],
-      animationDuration: `${2 + Math.random() * 3}s`,
-      animationDelay: `${Math.random()}s`,
-    }))
-  );
+  useEffect(() => {
+    if (isWinner) {
+      const duration = 3000;
+      const end = Date.now() + duration;
+
+      const frame = () => {
+        confetti({
+          particleCount: 3,
+          angle: 60,
+          spread: 55,
+          origin: { x: 0 },
+        });
+        confetti({
+          particleCount: 3,
+          angle: 120,
+          spread: 55,
+          origin: { x: 1 },
+        });
+
+        if (Date.now() < end) {
+          requestAnimationFrame(frame);
+        }
+      };
+      frame();
+    }
+  }, [isWinner]);
+
+  const handleShare = async () => {
+    const opponentName =
+      gameState.players.find((p) => p.id !== gameState.me.id)?.name ||
+      "Opponent";
+    const resultText =
+      lang === "ja"
+        ? `Algo Onlineで${opponentName}に勝利しました！🏆\n#AlgoOnline`
+        : `I beat ${opponentName} in Algo Online! 🏆\n#AlgoOnline`;
+
+    if (navigator.share) {
+      try {
+        await navigator.share({
+          title: "Algo Online",
+          text: resultText,
+          url: window.location.href,
+        });
+      } catch (err) {
+        console.error("Share failed:", err);
+      }
+    } else {
+      navigator.clipboard.writeText(`${resultText}\n${window.location.href}`);
+      alert(lang === "ja" ? "コピーしました！" : "Copied to clipboard!");
+    }
+  };
 
   return (
     <div
@@ -54,14 +95,6 @@ export function ResultModal({
       role="dialog"
       aria-modal="true"
     >
-      {isWinner &&
-        particles.map((style, i) => (
-          <div
-            key={i}
-            className="absolute w-2 h-2 rounded-full animate-bounce opacity-60"
-            style={style}
-          />
-        ))}
       <div className="bg-white rounded-[2rem] p-8 w-full max-w-sm text-center shadow-2xl space-y-6 animate-in zoom-in duration-300 relative z-10">
         <div className="space-y-2">
           <h2
@@ -75,13 +108,26 @@ export function ResultModal({
             {isWinner ? t.winMsg : t.loseMsg}
           </p>
         </div>
-        <button
-          onClick={() => window.location.reload()}
-          className="w-full bg-slate-900 text-white font-bold py-4 rounded-2xl hover:bg-black transition-all shadow-lg active:scale-95 flex items-center justify-center gap-2"
-        >
-          <RotateCcw size={18} />
-          {t.replay}
-        </button>
+
+        <div className="flex flex-col gap-3">
+          <button
+            onClick={() => window.location.reload()}
+            className="w-full bg-slate-900 text-white font-bold py-4 rounded-2xl hover:bg-black transition-all shadow-lg active:scale-95 flex items-center justify-center gap-2"
+          >
+            <RotateCcw size={18} />
+            {t.replay}
+          </button>
+          
+          {isWinner && (
+            <button
+              onClick={handleShare}
+              className="w-full bg-indigo-50 text-indigo-600 font-bold py-4 rounded-2xl hover:bg-indigo-100 transition-all shadow-sm active:scale-95 flex items-center justify-center gap-2"
+            >
+              <Share2 size={18} />
+              {lang === "ja" ? "結果をシェア" : "Share Result"}
+            </button>
+          )}
+        </div>
       </div>
     </div>
   );

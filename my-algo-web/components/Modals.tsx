@@ -68,23 +68,26 @@ export function ResultModal({
     const opponentName =
       gameState.players.find((p) => p.id !== gameState.me.id)?.name ||
       "Opponent";
+    
+    const url = window.location.origin; // トップページをシェア
+
     const resultText =
       lang === "ja"
-        ? `Algo Onlineで${opponentName}に勝利しました！🏆\n#AlgoOnline`
-        : `I beat ${opponentName} in Algo Online! 🏆\n#AlgoOnline`;
+        ? `🧠 Binarilyで${opponentName}に完全勝利！\n\n心理戦を制して相手を圧倒しました！👊\n君も論理的思考で勝負しよう！🔥\n\n#AlgoOnline #アルゴ #頭脳戦 #ボードゲーム`
+        : `🧠 I just dominated ${opponentName} in Binarily!\n\nOutsmarted and outplayed in this battle of logic! 👊\nThink you have what it takes? 🔥\n\n#AlgoOnline #LogicGame #Strategy #BoardGame`;
 
     if (navigator.share) {
       try {
         await navigator.share({
-          title: "Algo Online",
+          title: "Binarily",
           text: resultText,
-          url: window.location.href,
+          url: url,
         });
       } catch (err) {
         console.error("Share failed:", err);
       }
     } else {
-      navigator.clipboard.writeText(`${resultText}\n${window.location.href}`);
+      navigator.clipboard.writeText(`${resultText}\n${url}`);
       alert(lang === "ja" ? "コピーしました！" : "Copied to clipboard!");
     }
   };

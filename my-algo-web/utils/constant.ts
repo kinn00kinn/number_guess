@@ -10,7 +10,7 @@ export const TRANSLATIONS: Record<Lang, Record<string, string>> = {
     helpContent:
       "・相手の伏せカードをタップして数字を予想します\n・数字が当たればカードが公開されます\n・外れると自分のカードが公開されます\n・残りのデッキ枚数や場の状況を見て推理しましょう",
     reconnecting: "再接続中...",
-    welcomeTitle: "アルゴ・オンライン",
+    welcomeTitle: "Binarily（バイナリリー）",
     welcomeDesc: "番号を入力して入室するか、\n新しい部屋を作成してください。",
     roomLabel: "ルーム番号",
     join: "部屋に入る",
@@ -51,7 +51,7 @@ export const TRANSLATIONS: Record<Lang, Record<string, string>> = {
     helpContent:
       "- Tap an opponent's card to guess its number.\n- If correct, the card is revealed.\n- If wrong, your card is revealed.\n- Use logic to deduce the numbers.",
     reconnecting: "Reconnecting...",
-    welcomeTitle: "Algo Online",
+    welcomeTitle: "Binarily",
     welcomeDesc: "Enter room ID to join, or create a new one.",
     roomLabel: "Room ID",
     join: "Join Game",

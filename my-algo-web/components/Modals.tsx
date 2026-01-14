@@ -9,10 +9,12 @@ import {
   History,
   Trophy,
   Edit2,
+  Share2,
 } from "lucide-react";
 import { TRANSLATIONS } from "@/utils/constant";
 import { Lang, GameState, LogItem, RankingItem } from "@/types";
 import { useState, useEffect } from "react";
+import confetti from "canvas-confetti";
 
 // 共通: Escキーで閉じるためのフック
 function useEscapeKey(onClose: () => void) {
@@ -35,18 +37,60 @@ export function ResultModal({
   const t = TRANSLATIONS[lang];
   const isWinner = gameState.winner === gameState.me.id;
 
-  // パーティクル生成 (修正済み)
-  const [particles] = useState(() =>
-    [...Array(20)].map(() => ({
-      left: `${Math.random() * 100}%`,
-      top: `-10%`,
-      backgroundColor: ["#ff0", "#f0f", "#0ff", "#0f0"][
-        Math.floor(Math.random() * 4)
-      ],
-      animationDuration: `${2 + Math.random() * 3}s`,
-      animationDelay: `${Math.random()}s`,
-    }))
-  );
+  useEffect(() => {
+    if (isWinner) {
+      const duration = 3000;
+      const end = Date.now() + duration;
+
+      const frame = () => {
+        confetti({
+          particleCount: 3,
+          angle: 60,
+          spread: 55,
+          origin: { x: 0 },
+        });
+        confetti({
+          particleCount: 3,
+          angle: 120,
+          spread: 55,
+          origin: { x: 1 },
+        });
+
+        if (Date.now() < end) {
+          requestAnimationFrame(frame);
+        }
+      };
+      frame();
+    }
+  }, [isWinner]);
+
+  const handleShare = async () => {
+    const opponentName =
+      gameState.players.find((p) => p.id !== gameState.me.id)?.name ||
+      "Opponent";
+    
+    const url = window.location.origin; // トップページをシェア
+
+    const resultText =
+      lang === "ja"
+        ? `🧠 Binarilyで${opponentName}に完全勝利！\n\n心理戦を制して相手を圧倒しました！👊\n君も論理的思考で勝負しよう！🔥\n\n#Binarily #アルゴ #頭脳戦 #ボードゲーム`
+        : `🧠 I just dominated ${opponentName} in Binarily!\n\nOutsmarted and outplayed in this battle of logic! 👊\nThink you have what it takes? 🔥\n\n#Binarily #LogicGame #Strategy #BoardGame`;
+
+    if (navigator.share) {
+      try {
+        await navigator.share({
+          title: "Binarily",
+          text: resultText,
+          url: url,
+        });
+      } catch (err) {
+        console.error("Share failed:", err);
+      }
+    } else {
+      navigator.clipboard.writeText(`${resultText}\n${url}`);
+      alert(lang === "ja" ? "コピーしました！" : "Copied to clipboard!");
+    }
+  };
 
   return (
     <div
@@ -54,14 +98,6 @@ export function ResultModal({
       role="dialog"
       aria-modal="true"
     >
-      {isWinner &&
-        particles.map((style, i) => (
-          <div
-            key={i}
-            className="absolute w-2 h-2 rounded-full animate-bounce opacity-60"
-            style={style}
-          />
-        ))}
       <div className="bg-white rounded-[2rem] p-8 w-full max-w-sm text-center shadow-2xl space-y-6 animate-in zoom-in duration-300 relative z-10">
         <div className="space-y-2">
           <h2
@@ -75,13 +111,82 @@ export function ResultModal({
             {isWinner ? t.winMsg : t.loseMsg}
           </p>
         </div>
-        <button
-          onClick={() => window.location.reload()}
-          className="w-full bg-slate-900 text-white font-bold py-4 rounded-2xl hover:bg-black transition-all shadow-lg active:scale-95 flex items-center justify-center gap-2"
-        >
-          <RotateCcw size={18} />
-          {t.replay}
-        </button>
+
+        <div className="flex flex-col gap-3">
+          <button
+            onClick={() => window.location.reload()}
+            className="w-full bg-slate-900 text-white font-bold py-4 rounded-2xl hover:bg-black transition-all shadow-lg active:scale-95 flex items-center justify-center gap-2"
+          >
+            <RotateCcw size={18} />
+            {t.replay}
+          </button>
+          
+          {isWinner && (
+            <div className="flex flex-col gap-3 w-full">
+              <div className="grid grid-cols-2 gap-3">
+                {/* X (Twitter) Share */}
+                <a
+                  href={`https://x.com/intent/tweet?text=${encodeURIComponent(
+                    lang === "ja"
+                      ? `Binarilyで${
+                          gameState.players.find((p) => p.id !== gameState.me.id)
+                            ?.name || "Opponent"
+                        }に完全勝利！🏆\n\n心理戦を制して相手を圧倒しました！👊\n君も論理的思考で勝負しよう！🔥\n\n#Binarily #アルゴ #頭脳戦 #ボードゲーム`
+                      : `I just dominated ${
+                          gameState.players.find((p) => p.id !== gameState.me.id)
+                            ?.name || "Opponent"
+                        } in Binarily! 🏆\n\n#Binarily #LogicGame`
+                  )}&url=${encodeURIComponent(window.location.origin)}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="bg-black text-white font-bold py-3 rounded-xl hover:bg-zinc-800 transition-all shadow-sm active:scale-95 flex items-center justify-center gap-2"
+                >
+                  <svg
+                    viewBox="0 0 24 24"
+                    aria-hidden="true"
+                    className="w-5 h-5 fill-current"
+                  >
+                    <path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z" />
+                  </svg>
+                  Post
+                </a>
+
+                {/* LINE Share */}
+                <a
+                  href={`https://line.me/R/msg/text/?${encodeURIComponent(
+                    lang === "ja"
+                      ? `Binarilyで${
+                          gameState.players.find((p) => p.id !== gameState.me.id)
+                            ?.name || "Opponent"
+                        }に完全勝利！🏆\n`
+                      : `I won in Binarily! 🏆\n`
+                  )}${encodeURIComponent(window.location.origin)}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="bg-[#06C755] text-white font-bold py-3 rounded-xl hover:bg-[#05b34c] transition-all shadow-sm active:scale-95 flex items-center justify-center gap-2"
+                >
+                  <svg
+                    viewBox="0 0 24 24"
+                    aria-hidden="true"
+                    className="w-5 h-5 fill-current"
+                  >
+                    <path d="M12 2.5c-5.523 0-10 3.582-10 8 0 2.508 1.458 4.748 3.765 6.172-.424 1.554-1.396 3.033-1.589 3.344-.131.211-.035.495.197.581.109.041.229.022.324-.047 1.839-1.341 4.195-2.296 4.674-2.482.854.238 1.761.365 2.697.365 5.523 0 10-3.582 10-8s-4.477-8-10-8z" />
+                  </svg>
+                  LINE
+                </a>
+              </div>
+
+              {/* Native/Other Share */}
+              <button
+                onClick={handleShare}
+                className="w-full bg-indigo-50 text-indigo-600 font-bold py-3 rounded-xl hover:bg-indigo-100 transition-all shadow-sm active:scale-95 flex items-center justify-center gap-2"
+              >
+                <Share2 size={18} />
+                {lang === "ja" ? "その他" : "More"}
+              </button>
+            </div>
+          )}
+        </div>
       </div>
     </div>
   );

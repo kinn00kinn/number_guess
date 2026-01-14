@@ -131,7 +131,7 @@ export default function GameBoard({
           </div>
           <div className="h-6 flex items-center justify-center w-full">
             {gameLogs.length > 0 && (
-              <div className="bg-slate-800/90 backdrop-blur text-white text-[10px] px-3 py-1 rounded-lg shadow-lg animate-in fade-in zoom-in slide-in-from-top-1">
+              <div className="bg-slate-800/90 backdrop-blur text-white text-xs px-3 py-1 rounded-lg shadow-lg animate-in fade-in zoom-in slide-in-from-top-1">
                 {gameLogs[0].text}
               </div>
             )}
@@ -172,10 +172,10 @@ export default function GameBoard({
                 // 初手スキップ防止のdisabled
                 disabled={isProcessing || !isConnected || !hasMoved}
                 className={`
-                      w-14 h-14 rounded-full flex items-center justify-center text-[10px] font-bold shadow-lg transition-all
+                      w-16 h-16 rounded-full flex items-center justify-center text-xs font-bold shadow-lg transition-all
                       ${
                         hasMoved
-                          ? "bg-slate-900 text-white hover:bg-black active:scale-95"
+                          ? "bg-slate-900 text-white hover:bg-black active:scale-95 ring-4 ring-slate-200"
                           : "bg-slate-200 text-slate-400 cursor-not-allowed"
                       }
                     `}
@@ -208,7 +208,7 @@ export default function GameBoard({
             ))}
           </div>
         </div>
-        <div className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mt-3">
+        <div className="text-xs font-bold text-slate-400 uppercase tracking-widest mt-3">
           {t.yourHand}
         </div>
       </div>

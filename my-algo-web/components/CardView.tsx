@@ -40,6 +40,7 @@ const CardView = React.memo(function CardView({
         onClick={onClick}
         disabled={disabled || (isOpponent && isOpen)}
         className={`
+          touch-manipulation
           relative w-12 h-16 sm:w-16 sm:h-24 rounded-xl flex items-center justify-center text-2xl sm:text-3xl font-black select-none
           transition-all duration-300 shadow-sm border-b-4 active:border-b-0 active:translate-y-1
           ${

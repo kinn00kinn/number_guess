@@ -124,6 +124,24 @@ export default function Home() {
 
   const isMyTurn = gameState?.turnPlayerId === gameState?.me.id;
 
+  const handleCardClick = useCallback(
+    (index: number) => {
+      if (!gameState || guessModalClosingRef.current) return;
+      const card = gameState.opponentHand[index];
+      if (isMyTurn && !card.isOpen && !isProcessing && isConnected) {
+        setGuessModal({ show: true, targetIndex: index });
+      }
+    },
+    [
+      gameState,
+      guessModalClosingRef,
+      isMyTurn,
+      isProcessing,
+      isConnected,
+      setGuessModal,
+    ]
+  );
+
   return (
     <div className="min-h-screen bg-slate-50 text-slate-800 font-sans pb-safe selection:bg-slate-200">
       {/* ★ ターン開始時のカットイン演出 */}
@@ -186,18 +204,7 @@ export default function Home() {
                 onStay={handleStay}
                 toasts={game.toasts} // 追加
                 removeToast={game.removeToast} // 追加
-                onCardClick={(index) => {
-                  if (guessModalClosingRef.current) return;
-                  const card = gameState.opponentHand[index];
-                  if (
-                    isMyTurn &&
-                    !card.isOpen &&
-                    !isProcessing &&
-                    isConnected
-                  ) {
-                    setGuessModal({ show: true, targetIndex: index });
-                  }
-                }}
+                onCardClick={handleCardClick}
               />
             </>
           )

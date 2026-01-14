@@ -1,4 +1,12 @@
-import { ArrowRight, Trophy, LogIn, Loader2, X, Plus, Users } from "lucide-react";
+import {
+  ArrowRight,
+  Trophy,
+  LogIn,
+  Loader2,
+  X,
+  Plus,
+  Users,
+} from "lucide-react";
 import { TRANSLATIONS, API_URL } from "@/utils/constant";
 import { Lang, User } from "@/types";
 
@@ -77,20 +85,22 @@ export default function Lobby({
 
       <div className="space-y-2 text-center animate-in fade-in slide-in-from-bottom-4 duration-700 mb-4">
         <h2 className="text-3xl font-black text-slate-900 tracking-tight">
-          {t.welcomeTitle}
+          
+          <img src="./logo.svg" alt="" />
         </h2>
         <p className="text-slate-500 text-sm">
-          {lang === "ja" ? "オンラインで推理バトルを楽しもう" : "Enjoy online deduction battles"}
+          {lang === "ja"
+            ? "オンラインで推理バトルを楽しもう"
+            : "Enjoy online deduction battles"}
         </p>
       </div>
 
       <div className="w-full grid grid-cols-1 gap-4 animate-in fade-in slide-in-from-bottom-8 duration-1000 delay-100">
-        
         {/* 1. レート対戦 (メイン) */}
         {user ? (
           <div className="bg-gradient-to-br from-indigo-600 to-violet-600 rounded-2xl p-5 text-white shadow-lg shadow-indigo-200 relative overflow-hidden group">
             <div className="absolute top-0 right-0 -mt-4 -mr-4 w-32 h-32 bg-white opacity-10 rounded-full blur-2xl group-hover:scale-150 transition-transform duration-700"></div>
-            
+
             <div className="flex items-center justify-between mb-4 relative z-10">
               <div>
                 <p className="text-indigo-100 text-[10px] font-bold uppercase tracking-widest mb-0.5">
@@ -109,7 +119,7 @@ export default function Lobby({
                 </p>
               </div>
             </div>
-            
+
             <button
               onClick={onJoinRanked}
               disabled={isSearching || isUserLoading}
@@ -118,7 +128,10 @@ export default function Lobby({
               {isUserLoading ? (
                 <Loader2 size={18} className="animate-spin" />
               ) : (
-                <Trophy size={18} className={isSearching ? "animate-pulse" : ""} />
+                <Trophy
+                  size={18}
+                  className={isSearching ? "animate-pulse" : ""}
+                />
               )}
               {isUserLoading
                 ? t.nowLoading
@@ -129,7 +142,7 @@ export default function Lobby({
           </div>
         ) : (
           <div className="bg-slate-900 rounded-2xl p-5 text-white shadow-lg relative overflow-hidden">
-             <div className="flex items-center justify-between mb-4 relative z-10">
+            <div className="flex items-center justify-between mb-4 relative z-10">
               <div>
                 <p className="text-slate-400 text-[10px] font-bold uppercase tracking-widest mb-0.5">
                   Ranked Match
@@ -186,7 +199,7 @@ export default function Lobby({
                 <Users size={20} />
               </div>
             </div>
-            
+
             <div className="space-y-2">
               <p className="font-bold text-slate-800 text-sm leading-tight">
                 {lang === "ja" ? "部屋に入る" : "Join Room"}
@@ -212,9 +225,7 @@ export default function Lobby({
             </div>
           </div>
         </div>
-
       </div>
     </main>
   );
 }
-

@@ -5,7 +5,7 @@ import { Lang } from "@/types";
 export default function SortIndicator({ lang }: { lang: Lang }) {
   const t = TRANSLATIONS[lang];
   return (
-    <div className="w-full max-w-xs mx-auto flex items-center justify-between gap-3 text-[10px] font-bold text-slate-400 uppercase tracking-widest mt-2 px-4 opacity-60">
+    <div className="w-full max-w-xs mx-auto flex items-center justify-between gap-3 text-xs font-bold text-slate-400 uppercase tracking-widest mt-2 px-4 opacity-60">
       <span>{t.small}</span>
       <div className="flex-1 h-px bg-slate-300 relative flex items-center">
         <div className="absolute left-0 w-1 h-1 bg-slate-300 rounded-full"></div>

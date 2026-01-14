@@ -73,8 +73,8 @@ export function ResultModal({
 
     const resultText =
       lang === "ja"
-        ? `🧠 Binarilyで${opponentName}に完全勝利！\n\n心理戦を制して相手を圧倒しました！👊\n君も論理的思考で勝負しよう！🔥\n\n#AlgoOnline #アルゴ #頭脳戦 #ボードゲーム`
-        : `🧠 I just dominated ${opponentName} in Binarily!\n\nOutsmarted and outplayed in this battle of logic! 👊\nThink you have what it takes? 🔥\n\n#AlgoOnline #LogicGame #Strategy #BoardGame`;
+        ? `🧠 Binarilyで${opponentName}に完全勝利！\n\n心理戦を制して相手を圧倒しました！👊\n君も論理的思考で勝負しよう！🔥\n\n#Binarily #アルゴ #頭脳戦 #ボードゲーム`
+        : `🧠 I just dominated ${opponentName} in Binarily!\n\nOutsmarted and outplayed in this battle of logic! 👊\nThink you have what it takes? 🔥\n\n#Binarily #LogicGame #Strategy #BoardGame`;
 
     if (navigator.share) {
       try {
@@ -122,13 +122,69 @@ export function ResultModal({
           </button>
           
           {isWinner && (
-            <button
-              onClick={handleShare}
-              className="w-full bg-indigo-50 text-indigo-600 font-bold py-4 rounded-2xl hover:bg-indigo-100 transition-all shadow-sm active:scale-95 flex items-center justify-center gap-2"
-            >
-              <Share2 size={18} />
-              {lang === "ja" ? "結果をシェア" : "Share Result"}
-            </button>
+            <div className="flex flex-col gap-3 w-full">
+              <div className="grid grid-cols-2 gap-3">
+                {/* X (Twitter) Share */}
+                <a
+                  href={`https://x.com/intent/tweet?text=${encodeURIComponent(
+                    lang === "ja"
+                      ? `Binarilyで${
+                          gameState.players.find((p) => p.id !== gameState.me.id)
+                            ?.name || "Opponent"
+                        }に完全勝利！🏆\n\n心理戦を制して相手を圧倒しました！👊\n君も論理的思考で勝負しよう！🔥\n\n#Binarily #アルゴ #頭脳戦 #ボードゲーム`
+                      : `I just dominated ${
+                          gameState.players.find((p) => p.id !== gameState.me.id)
+                            ?.name || "Opponent"
+                        } in Binarily! 🏆\n\n#Binarily #LogicGame`
+                  )}&url=${encodeURIComponent(window.location.origin)}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="bg-black text-white font-bold py-3 rounded-xl hover:bg-zinc-800 transition-all shadow-sm active:scale-95 flex items-center justify-center gap-2"
+                >
+                  <svg
+                    viewBox="0 0 24 24"
+                    aria-hidden="true"
+                    className="w-5 h-5 fill-current"
+                  >
+                    <path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z" />
+                  </svg>
+                  Post
+                </a>
+
+                {/* LINE Share */}
+                <a
+                  href={`https://line.me/R/msg/text/?${encodeURIComponent(
+                    lang === "ja"
+                      ? `Binarilyで${
+                          gameState.players.find((p) => p.id !== gameState.me.id)
+                            ?.name || "Opponent"
+                        }に完全勝利！🏆\n`
+                      : `I won in Binarily! 🏆\n`
+                  )}${encodeURIComponent(window.location.origin)}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="bg-[#06C755] text-white font-bold py-3 rounded-xl hover:bg-[#05b34c] transition-all shadow-sm active:scale-95 flex items-center justify-center gap-2"
+                >
+                  <svg
+                    viewBox="0 0 24 24"
+                    aria-hidden="true"
+                    className="w-5 h-5 fill-current"
+                  >
+                    <path d="M12 2.5c-5.523 0-10 3.582-10 8 0 2.508 1.458 4.748 3.765 6.172-.424 1.554-1.396 3.033-1.589 3.344-.131.211-.035.495.197.581.109.041.229.022.324-.047 1.839-1.341 4.195-2.296 4.674-2.482.854.238 1.761.365 2.697.365 5.523 0 10-3.582 10-8s-4.477-8-10-8z" />
+                  </svg>
+                  LINE
+                </a>
+              </div>
+
+              {/* Native/Other Share */}
+              <button
+                onClick={handleShare}
+                className="w-full bg-indigo-50 text-indigo-600 font-bold py-3 rounded-xl hover:bg-indigo-100 transition-all shadow-sm active:scale-95 flex items-center justify-center gap-2"
+              >
+                <Share2 size={18} />
+                {lang === "ja" ? "その他" : "More"}
+              </button>
+            </div>
           )}
         </div>
       </div>

@@ -10,6 +10,7 @@ import {
 } from "lucide-react";
 import { Card, Lang } from "@/types";
 import CardView from "./CardView"; // 既存のCardViewを再利用
+import { TRANSLATIONS } from "@/utils/constant";
 
 // モック用のカードデータ
 const MOCK_CARDS: { [key: string]: Card[] } = {
@@ -33,32 +34,27 @@ export default function TutorialModal({
   onClose: () => void;
 }) {
   const [step, setStep] = useState(0);
+  const t = TRANSLATIONS[lang];
 
   // チュートリアルのステップ定義
   const steps = [
     {
-      title: lang === "ja" ? "基本ルール" : "Basic Rules",
+      title: t.tutBasicRule,
       icon: <Info className="text-blue-500" size={32} />,
       content: (
         <div className="space-y-4">
           <p className="text-sm text-slate-600 leading-relaxed">
-            {lang === "ja"
-              ? "0〜11の数字が書かれた「黒」と「白」のカードを使います。相手の伏せられたカードの数字をすべて当てた方が勝ちです。"
-              : "Use Black and White cards numbered 0-11. The winner is the one who guesses all of the opponent's hidden cards."}
+            {t.tutBasicRuleDesc}
           </p>
           <div className="bg-slate-50 p-4 rounded-xl border border-slate-100">
             <h4 className="font-bold text-slate-700 text-sm mb-2 flex items-center gap-2">
               <span className="bg-slate-800 text-white w-5 h-5 rounded-full flex items-center justify-center text-xs">
                 !
               </span>
-              {lang === "ja"
-                ? "絶対のルール：並び順"
-                : "The Golden Rule: Sorting"}
+              {t.tutGoldenRule}
             </h4>
             <p className="text-xs text-slate-500 mb-3">
-              {lang === "ja"
-                ? "カードは必ず「左から小さい順」に並びます。同じ数字なら「黒」が左です。"
-                : "Cards are always sorted from smallest to largest (left to right). If numbers are equal, Black is on the left."}
+              {t.tutGoldenRuleDesc}
             </p>
             {/* 実際のカードコンポーネントで可視化 */}
             <div className="flex justify-center gap-2 scale-90 origin-top">
@@ -74,68 +70,53 @@ export default function TutorialModal({
       ),
     },
     {
-      title: lang === "ja" ? "自分のターン" : "Your Turn",
+      title: t.yourTurn,
       icon: <Swords className="text-red-500" size={32} />,
       content: (
         <div className="space-y-4">
           <p className="text-sm text-slate-600">
-            {lang === "ja"
-              ? "山札からカードを1枚引きます。そのカードを使って相手のカードを攻撃（推理）します。"
-              : "Draw a card from the deck. Use that card to attack (guess) the opponent's card."}
+            {t.tutYourTurnDesc}
           </p>
           <ul className="space-y-2 text-sm text-slate-700 bg-red-50 p-4 rounded-xl">
             <li className="flex gap-2">
               <span className="font-bold text-red-500">1.</span>
-              {lang === "ja"
-                ? "相手の伏せカードを選ぶ"
-                : "Select an opponent's hidden card"}
+              {t.tutStep1}
             </li>
             <li className="flex gap-2">
               <span className="font-bold text-red-500">2.</span>
-              {lang === "ja"
-                ? "数字を宣言する (0-11)"
-                : "Guess the number (0-11)"}
+              {t.tutStep2}
             </li>
             <li className="flex gap-2">
               <span className="font-bold text-red-500">3.</span>
-              {lang === "ja"
-                ? "当たれば続けて攻撃可能！"
-                : "If correct, you can attack again!"}
+              {t.tutStep3}
             </li>
           </ul>
         </div>
       ),
     },
     {
-      title: lang === "ja" ? "失敗とパス" : "Miss & Stay",
+      title: t.tutMissStay,
       icon: <ShieldAlert className="text-amber-500" size={32} />,
       content: (
         <div className="space-y-4">
-          <div className="p-3 border-l-4 border-red-400 bg-slate-50">
-            <h5 className="font-bold text-slate-800 text-sm">
-              {lang === "ja" ? "予想が外れたら..." : "If you miss..."}
-            </h5>
-            <p className="text-xs text-slate-600 mt-1">
-              {lang === "ja"
-                ? "引いてきた自分のカードを公開（Open）しなければなりません。これが弱点になります。"
-                : "You must reveal (Open) the card you drew. This exposes your hand."}
+          <div className="p-3 border-l-4 border-slate-400 bg-slate-50">
+            <p className="text-xs text-slate-600 leading-relaxed">
+              {t.tutMissStayDesc1}
             </p>
           </div>
           <div className="p-3 border-l-4 border-blue-400 bg-slate-50">
             <h5 className="font-bold text-slate-800 text-sm">
-              {lang === "ja" ? "攻撃をやめる (STAY)" : "Stop Attack (STAY)"}
+              {t.tutMissStayTitle2}
             </h5>
             <p className="text-xs text-slate-600 mt-1">
-              {lang === "ja"
-                ? "攻撃が成功したとき、リスクを避けてターンを終了できます。引いたカードを伏せたまま手札に加えられます。"
-                : "If you guess correctly, you can end your turn to avoid risk. The drawn card remains hidden."}
+              {t.tutMissStayDesc2}
             </p>
           </div>
         </div>
       ),
     },
     {
-      title: lang === "ja" ? "勝利条件" : "Victory",
+      title: t.tutVictory,
       icon: <Trophy className="text-yellow-500" size={32} />,
       content: (
         <div className="text-center py-6">
@@ -143,12 +124,10 @@ export default function TutorialModal({
             <Trophy className="text-yellow-600 w-12 h-12" />
           </div>
           <h3 className="text-xl font-bold text-slate-800 mb-2">
-            {lang === "ja" ? "全て暴く" : "Reveal All"}
+            {t.tutVictoryTitle}
           </h3>
           <p className="text-slate-600 text-sm">
-            {lang === "ja"
-              ? "相手の手札をすべて「Open」状態にすればあなたの勝ちです！"
-              : "You win if you make all of your opponent's cards 'Open'!"}
+            {t.tutVictoryDesc}
           </p>
         </div>
       ),

@@ -6,7 +6,10 @@ import {
   X,
   Plus,
   Users,
+  GraduationCap,
+  Info as InfoIcon,
 } from "lucide-react";
+import Link from "next/link";
 import { TRANSLATIONS, API_URL } from "@/utils/constant";
 import { Lang, User } from "@/types";
 
@@ -51,7 +54,7 @@ export default function Lobby({
   };
 
   return (
-    <main className="flex-1 px-4 flex flex-col items-center justify-center gap-6 -mt-10 relative w-full max-w-md mx-auto">
+    <main className="flex-1 px-4 flex flex-col items-center justify-center gap-6 py-6 relative w-full max-w-md mx-auto">
       {/* マッチング待機オーバーレイ */}
       {isSearching && (
         <div className="absolute inset-0 z-50 flex flex-col items-center justify-center bg-slate-50/90 backdrop-blur-sm rounded-3xl animate-in fade-in duration-300">
@@ -224,6 +227,40 @@ export default function Lobby({
               </div>
             </div>
           </div>
+        </div>
+
+        {/* 4. チュートリアル */}
+        <Link href="/tutorial" className="block w-full">
+          <div className="bg-white border border-slate-200 p-4 rounded-2xl shadow-sm hover:border-orange-300 hover:shadow-md hover:bg-orange-50/30 transition-all group flex items-center justify-between">
+            <div className="flex items-center gap-4">
+              <div className="bg-orange-100 w-10 h-10 rounded-full flex items-center justify-center text-orange-600 group-hover:scale-110 transition-transform">
+                <GraduationCap size={20} />
+              </div>
+              <div className="text-left">
+                <p className="font-bold text-slate-800 text-lg leading-tight">
+                  {lang === "ja" ? "チュートリアル" : "Tutorial"}
+                </p>
+                <p className="text-xs text-slate-500 font-medium">
+                  {lang === "ja" ? "ルールとコツを学ぶ" : "Learn how to play"}
+                </p>
+              </div>
+            </div>
+            <ArrowRight
+              size={20}
+              className="text-slate-300 group-hover:text-orange-500 transition-colors"
+            />
+          </div>
+        </Link>
+
+        {/* Info Link */}
+        <div className="pt-2 pb-6 text-center">
+          <Link
+            href="/info"
+            className="text-xs text-slate-400 font-bold hover:text-slate-600 hover:underline transition-colors inline-flex items-center justify-center gap-1"
+          >
+            <InfoIcon size={12} />
+            {lang === "ja" ? "インフォメーション" : "Information"}
+          </Link>
         </div>
       </div>
     </main>

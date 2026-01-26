@@ -23,6 +23,7 @@ type Props = {
   onStay: () => void;
   toasts: ToastItem[]; // ★追加
   removeToast: (id: string) => void; // ★追加
+  highlightStay?: boolean; // ★追加
 };
 
 export default function GameBoard({
@@ -39,6 +40,7 @@ export default function GameBoard({
   onStay,
   toasts, // ★追加
   removeToast, // ★追加
+  highlightStay, // ★追加
 }: Props) {
   const t = TRANSLATIONS[lang];
 
@@ -178,6 +180,7 @@ export default function GameBoard({
                           ? "bg-slate-900 text-white hover:bg-black active:scale-95 ring-4 ring-slate-200"
                           : "bg-slate-200 text-slate-400 cursor-not-allowed"
                       }
+                      ${highlightStay ? "ring-4 ring-orange-500 animate-pulse scale-110 z-50" : ""}
                     `}
               >
                 {t.stay}

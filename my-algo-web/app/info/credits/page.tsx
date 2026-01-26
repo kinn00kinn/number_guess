@@ -44,7 +44,7 @@ export default function CreditsPage() {
                 H
               </div>
               <div>
-                <div className="font-bold text-slate-800">Haruki</div>
+                <div className="font-bold text-slate-800">kinnkinn</div>
                 <div className="text-xs text-slate-500">
                   Full Stack Developer
                 </div>
@@ -56,7 +56,7 @@ export default function CreditsPage() {
               バグ報告や「こんな機能が欲しい！」などのご意見は、X (Twitter) までお気軽にどうぞ！
             </p>
             <p className="mt-3 text-xs">
-              GitHub: <a href="https://github.com/haruki1009kk" target="_blank" rel="noreferrer" className="text-blue-500 hover:underline">@haruki1009kk</a>
+              GitHub: <a href="https://github.com/kinn00kinn" target="_blank" rel="noreferrer" className="text-blue-500 hover:underline">@kinn00kinn</a>
             </p>
           </Section>
 

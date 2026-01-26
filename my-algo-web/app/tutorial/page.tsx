@@ -45,7 +45,7 @@ const STEPS: Step[] = [
   {
     id: "intro",
     title: "チュートリアルへようこそ",
-    description: "実際にゲームをプレイしながら、Algoのルールと勝ち方を学びましょう。",
+    description: "実際にゲームをプレイしながら、アルゴの基本ルールと勝ち方を学びましょう。",
     expectedAction: "next",
     position: "bottom",
   },
@@ -55,18 +55,18 @@ const STEPS: Step[] = [
     description: (
       <span>
         あなたの手札を見てください。<br />
-        <strong>左から小さい順</strong>に並んでいます。<br />
-        同じ数字なら<strong>黒が左</strong>です。これは絶対のルールです。
+        カードは<strong>左から小さい順</strong>に並んでいます。<br />
+        同じ数字なら<strong>黒が左</strong>です。これはアルゴの絶対のルールです。
       </span>
     ),
     highlight: "hand",
     expectedAction: "next",
-    position: "top", // Show at top to reveal hand
+    position: "top",
   },
   {
     id: "draw",
     title: "カードを引く",
-    description: "あなたのターンです。山札からカードを引きました（White 4）。",
+    description: "あなたのターンです。まずは山札からカードを1枚引きます。今回は「白の4」を引きました。",
     highlight: "drawn",
     expectedAction: "next",
     position: "bottom",
@@ -76,23 +76,23 @@ const STEPS: Step[] = [
     title: "攻撃するカードを選ぶ",
     description: (
       <span>
-        相手の伏せカードを1枚選んで攻撃（推理）します。<br />
-        <strong>真ん中のカード</strong>をクリックしてみましょう。
+        相手のカードを1枚選んで数字を推理（攻撃）します。<br />
+        今回は<strong>真ん中のカード</strong>をクリックしてみましょう。
       </span>
     ),
     highlight: "opponent",
     expectedAction: "click_card",
-    targetCardIndex: 1, // Center card
-    position: "bottom", // Show at bottom to reveal opponent
+    targetCardIndex: 1,
+    position: "bottom",
   },
   {
     id: "guess",
     title: "数字を推理する",
     description: (
       <span>
-        数字を宣言します。<br />
-        相手の手札は3枚。左は小さく、右は大きいはずです。<br />
-        真ん中は... <strong>「4」</strong> と予想してみましょう！
+        数字を宣言します。相手の手札も左から順に並んでいます。<br />
+        左が「2」、右が「9」なら、真ん中は...<br />
+        <strong>「4」</strong> と予想してみましょう！
       </span>
     ),
     expectedAction: "guess",
@@ -106,7 +106,7 @@ const STEPS: Step[] = [
       <span>
         正解です！<br />
         予想が当たると、そのカードは<strong>Open（公開）</strong>されます。<br />
-        これで相手の手の内が一つ分かりました。
+        成功すると、続けて他のカードを攻撃することもできます。
       </span>
     ),
     highlight: "opponent",
@@ -115,22 +115,21 @@ const STEPS: Step[] = [
   },
   {
     id: "stay_info",
-    title: "続けて攻撃するか？",
+    title: "リスクとSTAY",
     description: (
       <span>
-        成功すると、続けて攻撃することもできます。<br />
-        しかし、失敗すると自分の引いたカードを公開しなければなりません。<br />
-        リスクを避けるために<strong>STAY（終了）</strong>しましょう。
+        しかし、もし続けて攻撃して失敗すると、さっき引いた自分のカードを公開しなければなりません。<br />
+        リスクを避けるために、今回は<strong>STAY（終了）</strong>しましょう。
       </span>
     ),
     highlight: "stay",
     expectedAction: "stay",
-    position: "top", // Show at top to reveal center/bottom
+    position: "top",
   },
   {
     id: "conclusion",
     title: "チュートリアル完了",
-    description: "基本はこれだけです！相手のカードを全てOpenにすれば勝利です。実践で腕を磨きましょう！",
+    description: "基本はこれだけです！相手のカードを全てOpenにすれば勝利です。実践でさらに腕を磨きましょう！",
     expectedAction: "next",
     position: "bottom",
   },
@@ -241,20 +240,30 @@ export default function TutorialPage() {
   };
 
   const handleStay = () => {
-    if (currentStep.expectedAction !== "stay") return;
+    if (currentStep.expectedAction !== "stay" && currentStep.id !== "result_success") return;
     
     // Add drawn card to hand (visual only)
-    setGameState((prev) => ({
+    setGameState((prev) => {
+      if (!prev.drawnCard) return prev;
+      return {
         ...prev,
         drawnCard: null,
         me: {
-            ...prev.me,
-            hand: [...prev.me.hand, prev.drawnCard!].sort((a,b) => a.number! - b.number!), // simplified sort
-        }
-    }));
+          ...prev.me,
+          hand: [...prev.me.hand, prev.drawnCard].sort((a, b) => {
+            if (a.number !== b.number) return a.number! - b.number!;
+            return a.color === "black" ? -1 : 1;
+          }),
+        },
+      };
+    });
     
     addToast("ターン終了 (Turn End)", "success");
-    nextStep();
+    if (currentStep.id === "result_success") {
+      setStepIndex(STEPS.findIndex(s => s.id === "conclusion"));
+    } else {
+      nextStep();
+    }
   };
 
   return (
@@ -287,13 +296,14 @@ export default function TutorialPage() {
           isProcessing={false}
           isConnected={true}
           isReconnecting={false}
-          hasMoved={false}
+          hasMoved={hasMoved || currentStep.id === "stay_info" || currentStep.id === "result_success"}
           gameLogs={[]}
           lastAttack={null}
           onCardClick={handleCardClick}
           onStay={handleStay}
           toasts={toasts}
           removeToast={removeToast}
+          highlightStay={currentStep.id === "stay_info"}
         />
 
         {/* Overlay Instruction */}

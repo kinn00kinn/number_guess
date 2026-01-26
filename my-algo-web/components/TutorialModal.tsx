@@ -111,24 +111,21 @@ export default function TutorialModal({
       icon: <ShieldAlert className="text-amber-500" size={32} />,
       content: (
         <div className="space-y-4">
-          <div className="p-3 border-l-4 border-red-400 bg-slate-50">
-            <h5 className="font-bold text-slate-800 text-sm">
-              {lang === "ja" ? "予想が外れたら..." : "If you miss..."}
-            </h5>
-            <p className="text-xs text-slate-600 mt-1">
+          <div className="p-3 border-l-4 border-slate-400 bg-slate-50">
+            <p className="text-xs text-slate-600 leading-relaxed">
               {lang === "ja"
-                ? "引いてきた自分のカードを公開（Open）しなければなりません。これが弱点になります。"
-                : "You must reveal (Open) the card you drew. This exposes your hand."}
+                ? "成功すると、続けて攻撃することもできます。しかし、失敗すると自分の引いたカードを公開しなければなりません。"
+                : "If successful, you can continue attacking. However, if you miss, you must reveal the card you drew."}
             </p>
           </div>
           <div className="p-3 border-l-4 border-blue-400 bg-slate-50">
             <h5 className="font-bold text-slate-800 text-sm">
-              {lang === "ja" ? "攻撃をやめる (STAY)" : "Stop Attack (STAY)"}
+              {lang === "ja" ? "リスクを避けて STAY" : "STAY to avoid risk"}
             </h5>
             <p className="text-xs text-slate-600 mt-1">
               {lang === "ja"
-                ? "攻撃が成功したとき、リスクを避けてターンを終了できます。引いたカードを伏せたまま手札に加えられます。"
-                : "If you guess correctly, you can end your turn to avoid risk. The drawn card remains hidden."}
+                ? "無理をせず「STAY」で終了すれば、引いたカードを伏せたまま手札に加えられます。"
+                : "By choosing 'STAY' to end your turn, you can add the drawn card to your hand while keeping it hidden."}
             </p>
           </div>
         </div>

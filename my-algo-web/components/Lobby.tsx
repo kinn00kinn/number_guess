@@ -7,6 +7,7 @@ import {
   Plus,
   Users,
 } from "lucide-react";
+import Image from "next/image";
 import { TRANSLATIONS, API_URL } from "@/utils/constant";
 import { Lang, User } from "@/types";
 
@@ -86,7 +87,7 @@ export default function Lobby({
       <div className="space-y-2 text-center animate-in fade-in slide-in-from-bottom-4 duration-700 mb-4">
         <h2 className="text-3xl font-black text-slate-900 tracking-tight">
           
-          <img src="./logo.svg" alt="" />
+          <Image src="/logo.svg" alt="" width={160} height={40} priority />
         </h2>
         <p className="text-slate-500 text-sm">
           {lang === "ja"

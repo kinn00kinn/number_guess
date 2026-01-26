@@ -50,18 +50,23 @@ export default function CreditsPage() {
                 </div>
               </div>
             </div>
+            <p className="mt-3 text-sm">
+              個人でWebサービスの開発をしています。<br />
+              「シンプルで面白い」をモットーに作りました。<br />
+              バグ報告や「こんな機能が欲しい！」などのご意見は、X (Twitter) までお気軽にどうぞ！
+            </p>
             <p className="mt-3 text-xs">
               GitHub: <a href="https://github.com/haruki1009kk" target="_blank" rel="noreferrer" className="text-blue-500 hover:underline">@haruki1009kk</a>
             </p>
           </Section>
 
-          <Section title="素材・ライセンス">
-            <p>このサービスは以下の技術・素材を使用しています。</p>
-            <ul className="list-disc list-inside space-y-1 ml-2 text-xs">
-              <li>Next.js / React</li>
-              <li>Hono / Cloudflare Workers</li>
-              <li>Lucide React (Icons)</li>
-              <li>Tailwind CSS</li>
+          <Section title="使用技術・ライセンス">
+            <p>このゲームは、以下の素晴らしいオープンソース技術や素材のおかげで動いています。</p>
+            <ul className="list-disc list-inside space-y-1 ml-2 text-xs text-slate-500 mt-2">
+              <li>Next.js / React (Frontend Framework)</li>
+              <li>Hono / Cloudflare Workers (Backend API)</li>
+              <li>Lucide React (Beautiful Icons)</li>
+              <li>Tailwind CSS (Styling)</li>
             </ul>
           </Section>
         </div>

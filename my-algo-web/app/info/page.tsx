@@ -9,6 +9,7 @@ import {
   HelpCircle,
   Users,
   ChevronRight,
+  Bell,
 } from "lucide-react";
 
 const InfoMenuLink = ({
@@ -56,25 +57,29 @@ export default function InfoIndexPage() {
             <h1 className="text-3xl font-black text-slate-900 tracking-tight">
               Information
             </h1>
-            <p className="text-slate-500">
-              Algo Online (PanDo) の情報ポータル
-            </p>
+            <p className="text-slate-500">Binarilyの情報ポータル</p>
           </div>
         </header>
 
         {/* Menu Grid */}
         <div className="grid gap-3">
           <InfoMenuLink
+            href="/info/news"
+            icon={<Bell size={24} />}
+            title="News"
+            desc="アップデート情報・お知らせ"
+          />
+          <InfoMenuLink
             href="/info/about"
             icon={<Info size={24} />}
             title="About"
-            desc="このゲームについて・お知らせ"
+            desc="このゲームについて"
           />
           <InfoMenuLink
             href="/info/rules"
             icon={<BookOpen size={24} />}
             title="Rules"
-            desc="基本ルールと遊び方"
+            desc="詳しいルールと遊び方"
           />
           <InfoMenuLink
             href="/info/faq"
@@ -92,12 +97,12 @@ export default function InfoIndexPage() {
             href="/info/credits"
             icon={<Users size={24} />}
             title="Credits"
-            desc="開発者・素材提供"
+            desc="開発者・使用素材"
           />
         </div>
 
         <div className="text-center text-xs text-slate-400 pt-8">
-          &copy; 2026 Algo Online (PanDo). All rights reserved.
+          &copy; 2026 Binarily. All rights reserved.
         </div>
       </div>
     </div>

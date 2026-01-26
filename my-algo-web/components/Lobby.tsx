@@ -54,7 +54,7 @@ export default function Lobby({
   };
 
   return (
-    <main className="flex-1 px-4 flex flex-col items-center justify-center gap-6 -mt-10 relative w-full max-w-md mx-auto">
+    <main className="flex-1 px-4 flex flex-col items-center justify-center gap-6 py-6 relative w-full max-w-md mx-auto">
       {/* マッチング待機オーバーレイ */}
       {isSearching && (
         <div className="absolute inset-0 z-50 flex flex-col items-center justify-center bg-slate-50/90 backdrop-blur-sm rounded-3xl animate-in fade-in duration-300">

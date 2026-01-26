@@ -42,25 +42,29 @@ export default function FaqPage() {
             <div className="space-y-6">
               <div>
                 <h3 className="font-bold text-slate-800 text-sm mb-1">
-                  Q. 無料で遊べますか？
-                </h3>
-                <p>A. はい、すべての機能を無料で利用できます。</p>
-              </div>
-              <div>
-                <h3 className="font-bold text-slate-800 text-sm mb-1">
-                  Q. 友達と対戦するには？
+                  Q. お金はかかりますか？
                 </h3>
                 <p>
-                  A. 「ルーム作成」を行い、表示されるルームIDを友達に共有してください。
-                  相手がそのIDを入力して入室すると対戦が始まります。
+                  A. いいえ、すべての機能を完全無料で遊んでいただけます。
                 </p>
               </div>
               <div>
                 <h3 className="font-bold text-slate-800 text-sm mb-1">
-                  Q. アカウント登録は必要ですか？
+                  Q. 友達と対戦するにはどうすればいいですか？
                 </h3>
                 <p>
-                  A. ゲストとしてプレイすることも可能ですが、Googleアカウントでログインすると、戦績の保存やランキングへの参加が可能になります。
+                  A. ホーム画面の「部屋を作る」ボタンを押してください。<br />
+                  4桁の「ルームID」が表示されるので、それを友達に教えてあげましょう。<br />
+                  友達がそのIDを入力して「部屋に入る」と、対戦が始まります。
+                </p>
+              </div>
+              <div>
+                <h3 className="font-bold text-slate-800 text-sm mb-1">
+                  Q. ログインは必須ですか？
+                </h3>
+                <p>
+                  A. いいえ、ゲストのままでも遊べます！<br />
+                  Googleアカウントでログインすると、対戦成績（レート）が保存されたり、ランキングに参加できるようになります。もっと楽しみたくなったらぜひ登録してみてください。
                 </p>
               </div>
             </div>

@@ -40,37 +40,43 @@ export default function TermsPage() {
         <div className="space-y-6">
           <Section title="利用規約">
             <p>
-              当サービス（以下「本サービス」）を利用することによって、利用者は本規約に同意したものとみなします。
+              本サービス「Binarily」をご利用いただくにあたり、以下のルール（利用規約）への同意をお願いしています。
             </p>
-            <h3 className="font-bold text-slate-700 mt-4 mb-2">禁止事項</h3>
-            <ul className="list-disc list-inside space-y-1 ml-2">
-                <li>公序良俗に反する行為</li>
-                <li>不正アクセスやサーバーへの過度な負荷をかける行為</li>
-                <li>他のユーザーへの迷惑行為</li>
-                <li>その他、運営者が不適切と判断する行為</li>
+            <h3 className="font-bold text-slate-700 mt-4 mb-2">🚫 禁止事項</h3>
+            <p className="text-xs mb-2 text-slate-500">
+              みんなで楽しく遊ぶために、以下の行為はやめましょう。
+            </p>
+            <ul className="list-disc list-inside space-y-1 ml-2 text-slate-700">
+              <li>公序良俗に反する行為、他人を不快にさせる行為</li>
+              <li>不正アクセスや、サーバーに無理な負荷をかける行為</li>
+              <li>バグを意図的に利用して有利に進める行為</li>
+              <li>その他、運営者が「これはダメだ」と判断する行為</li>
             </ul>
-            <h3 className="font-bold text-slate-700 mt-4 mb-2">免責事項</h3>
+            <h3 className="font-bold text-slate-700 mt-4 mb-2">⚠️ 免責事項</h3>
             <p>
-                本サービスの利用により生じた損害について、運営者は一切の責任を負いません。
-                本サービスは予告なく変更・停止・終了することがあります。
+              本サービスの利用によって何らかのトラブルや損害が生じた場合でも、運営者は責任を負いかねます。
+              <br />
+              また、個人開発のため、予告なくサービスの内容が変わったり、終了したりすることがあります。あらかじめご了承ください。
             </p>
           </Section>
 
           <Section title="プライバシーポリシー">
-            <h3 className="font-bold text-slate-700 mt-4 mb-2">情報の収集</h3>
+            <h3 className="font-bold text-slate-700 mt-4 mb-2">
+              情報の扱いについて
+            </h3>
             <p>
-              本サービスでは、Googleアカウントによる認証（Google Login）を利用する場合、Googleから提供される基本情報（名前、メールアドレス、プロフィール画像）を取得・保存します。
-              また、サービスの利用状況を分析するためにCookieやアクセスログを利用する場合があります。
+              Googleアカウントでログインする場合、Googleから「お名前」「メールアドレス」「アイコン画像」の情報をお預かりします。
+              <br />
+              これらの情報は、ゲーム内での表示や、ランキング機能、ご本人確認のためにのみ使用します。
             </p>
-            <h3 className="font-bold text-slate-700 mt-4 mb-2">情報の利用目的</h3>
-            <ul className="list-disc list-inside space-y-1 ml-2">
-                <li>本サービスの提供・運営のため</li>
-                <li>ランキング機能の提供のため</li>
-                <li>不正利用の防止のため</li>
-            </ul>
-            <h3 className="font-bold text-slate-700 mt-4 mb-2">第三者への提供</h3>
+            <p className="mt-2">
+              また、サービスの改善のために、匿名のアクセス解析（Cookieなど）を利用する場合があります。
+            </p>
+            <h3 className="font-bold text-slate-700 mt-4 mb-2">
+              第三者への提供
+            </h3>
             <p>
-                法令に基づく場合を除き、取得した個人情報を第三者に提供することはありません。
+              法律で求められた場合を除き、お預かりした個人情報を勝手に他の人や会社に渡すことはありません。ご安心ください。
             </p>
           </Section>
         </div>

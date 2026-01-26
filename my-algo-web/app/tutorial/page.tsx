@@ -1,20 +1,19 @@
 "use client";
 
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import {
-  ArrowLeft,
   CheckCircle2,
   ChevronRight,
-  HelpCircle,
   Lightbulb,
   MousePointer2,
 } from "lucide-react";
 
 import GameBoard from "@/components/GameBoard";
-import { GuessModal } from "@/components/Modals"; // Assume these are exported from Modals
+import { GuessModal } from "@/components/Modals";
 import { GameState, Card, Lang } from "@/types";
 import { ToastItem } from "@/components/Toast";
+import { TRANSLATIONS } from "@/utils/constant";
 
 // --- Mock Data Helpers ---
 
@@ -41,105 +40,99 @@ type Step = {
   position?: "top" | "bottom"; // Message position
 };
 
-const STEPS: Step[] = [
-  {
-    id: "intro",
-    title: "チュートリアルへようこそ",
-    description: "実際にゲームをプレイしながら、アルゴの基本ルールと勝ち方を学びましょう。",
-    expectedAction: "next",
-    position: "bottom",
-  },
-  {
-    id: "hand_sort",
-    title: "手札のルール",
-    description: (
-      <span>
-        あなたの手札を見てください。<br />
-        カードは<strong>左から小さい順</strong>に並んでいます。<br />
-        同じ数字なら<strong>黒が左</strong>です。これはアルゴの絶対のルールです。
-      </span>
-    ),
-    highlight: "hand",
-    expectedAction: "next",
-    position: "top",
-  },
-  {
-    id: "draw",
-    title: "カードを引く",
-    description: "あなたのターンです。まずは山札からカードを1枚引きます。今回は「白の4」を引きました。",
-    highlight: "drawn",
-    expectedAction: "next",
-    position: "bottom",
-  },
-  {
-    id: "attack_select",
-    title: "攻撃するカードを選ぶ",
-    description: (
-      <span>
-        相手のカードを1枚選んで数字を推理（攻撃）します。<br />
-        今回は<strong>真ん中のカード</strong>をクリックしてみましょう。
-      </span>
-    ),
-    highlight: "opponent",
-    expectedAction: "click_card",
-    targetCardIndex: 1,
-    position: "bottom",
-  },
-  {
-    id: "guess",
-    title: "数字を推理する",
-    description: (
-      <span>
-        数字を宣言します。相手の手札も左から順に並んでいます。<br />
-        左が「2」、右が「9」なら、真ん中は...<br />
-        <strong>「4」</strong> と予想してみましょう！
-      </span>
-    ),
-    expectedAction: "guess",
-    targetGuess: 4,
-    position: "bottom",
-  },
-  {
-    id: "result_success",
-    title: "成功！",
-    description: (
-      <span>
-        正解です！<br />
-        予想が当たると、そのカードは<strong>Open（公開）</strong>されます。<br />
-        成功すると、続けて他のカードを攻撃することもできます。
-      </span>
-    ),
-    highlight: "opponent",
-    expectedAction: "next",
-    position: "bottom",
-  },
-  {
-    id: "stay_info",
-    title: "リスクとSTAY",
-    description: (
-      <span>
-        しかし、もし続けて攻撃して失敗すると、さっき引いた自分のカードを公開しなければなりません。<br />
-        リスクを避けるために、今回は<strong>STAY（終了）</strong>しましょう。
-      </span>
-    ),
-    highlight: "stay",
-    expectedAction: "stay",
-    position: "top",
-  },
-  {
-    id: "conclusion",
-    title: "チュートリアル完了",
-    description: "基本はこれだけです！相手のカードを全てOpenにすれば勝利です。実践でさらに腕を磨きましょう！",
-    expectedAction: "next",
-    position: "bottom",
-  },
-];
-
 export default function TutorialPage() {
   const router = useRouter();
   const [stepIndex, setStepIndex] = useState(0);
   const [lang, setLang] = useState<Lang>("ja");
   
+  const t = TRANSLATIONS[lang];
+
+  const STEPS: Step[] = useMemo(() => [
+    {
+      id: "intro",
+      title: t.tutIntroTitle,
+      description: t.tutIntroDesc,
+      expectedAction: "next",
+      position: "bottom",
+    },
+    {
+      id: "hand_sort",
+      title: t.tutHandTitle,
+      description: (
+        <span className="whitespace-pre-line">
+            {t.tutHandDesc}
+        </span>
+      ),
+      highlight: "hand",
+      expectedAction: "next",
+      position: "top",
+    },
+    {
+      id: "draw",
+      title: t.tutDrawTitle,
+      description: t.tutDrawDesc,
+      highlight: "drawn",
+      expectedAction: "next",
+      position: "bottom",
+    },
+    {
+      id: "attack_select",
+      title: t.tutAttackTitle,
+      description: (
+        <span className="whitespace-pre-line">
+            {t.tutAttackDesc}
+        </span>
+      ),
+      highlight: "opponent",
+      expectedAction: "click_card",
+      targetCardIndex: 1,
+      position: "bottom",
+    },
+    {
+      id: "guess",
+      title: t.tutGuessTitle,
+      description: (
+        <span className="whitespace-pre-line">
+           {t.tutGuessDesc}
+        </span>
+      ),
+      expectedAction: "guess",
+      targetGuess: 4,
+      position: "bottom",
+    },
+    {
+      id: "result_success",
+      title: t.tutResultTitle,
+      description: (
+        <span className="whitespace-pre-line">
+            {t.tutResultDesc}
+        </span>
+      ),
+      highlight: "opponent",
+      expectedAction: "next",
+      position: "bottom",
+    },
+    {
+      id: "stay_info",
+      title: t.tutStayTitle,
+      description: (
+        <span className="whitespace-pre-line">
+            {t.tutStayDesc}
+        </span>
+      ),
+      highlight: "stay",
+      expectedAction: "stay",
+      position: "top",
+    },
+    {
+      id: "conclusion",
+      title: t.tutEndTitle,
+      description: t.tutEndDesc,
+      expectedAction: "next",
+      position: "bottom",
+    },
+  ], [t]);
+
   // Game State
   const [gameState, setGameState] = useState<GameState>({
     phase: "playing",
@@ -279,12 +272,20 @@ export default function TutorialPage() {
                 <p className="text-[10px] text-slate-500 font-mono">Step {stepIndex + 1}/{STEPS.length}</p>
             </div>
         </div>
-        <button 
-            onClick={() => router.push("/")}
-            className="text-xs font-bold text-slate-500 hover:text-slate-800 px-3 py-1.5 rounded-full hover:bg-slate-100 transition-colors"
-        >
-            Exit
-        </button>
+        <div className="flex items-center gap-2">
+            <button
+                onClick={() => setLang(lang === "ja" ? "en" : "ja")}
+                className="text-xs font-bold text-slate-500 hover:text-slate-800 px-3 py-1.5 rounded-full hover:bg-slate-100 transition-colors border border-transparent hover:border-slate-200"
+            >
+                {lang === "ja" ? "EN" : "JP"}
+            </button>
+            <button 
+                onClick={() => router.push("/")}
+                className="text-xs font-bold text-slate-500 hover:text-slate-800 px-3 py-1.5 rounded-full hover:bg-slate-100 transition-colors"
+            >
+                {t.tutExit}
+            </button>
+        </div>
       </header>
 
       {/* Main Game Area */}
@@ -335,7 +336,7 @@ export default function TutorialPage() {
                                 onClick={nextStep}
                                 className="w-full bg-white text-slate-900 font-bold py-2.5 rounded-xl hover:bg-slate-200 active:scale-95 transition-all flex items-center justify-center gap-2 mt-2"
                             >
-                                次へ (Next) <ChevronRight size={16} />
+                                {t.tutNext} <ChevronRight size={16} />
                             </button>
                         )}
                     </div>

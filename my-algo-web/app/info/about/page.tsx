@@ -51,6 +51,12 @@ export default function AboutPage() {
             <p>
               面倒な登録なしで、ブラウザからすぐに誰とでも無料で対戦できます。
             </p>
+            <a
+              href="https://kinn-kinn.com/projects/binarily/"
+              className="font-medium text-blue-600 underline"
+            >
+              Project details
+            </a>
           </Section>
         </div>
       </div>

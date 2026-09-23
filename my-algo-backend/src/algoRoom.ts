@@ -313,6 +313,7 @@ export class AlgoRoom extends DurableObject {
       const existingPlayer = this.state.players.find((p) => p.id === playerId);
       if (!existingPlayer && this.state.players.length >= 2) {
         ws.send(JSON.stringify({ type: "ERROR", message: "満員です", fatal: true }));
+        ws.close(1008, "Room full");
         return;
       }
 

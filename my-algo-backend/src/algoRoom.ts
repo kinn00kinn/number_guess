@@ -194,8 +194,8 @@ export class AlgoRoom extends DurableObject {
 
     const { 0: client, 1: server } = new WebSocketPair();
     const authUserId = request.headers.get("x-binarily-user-id") || null;
-    server.serializeAttachment({ authUserId, playerId: null } satisfies SocketAttachment);
     this.ctx.acceptWebSocket(server);
+    server.serializeAttachment({ authUserId, playerId: null } satisfies SocketAttachment);
     return new Response(null, { status: 101, webSocket: client });
   }
 

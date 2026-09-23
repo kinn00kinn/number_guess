@@ -83,3 +83,35 @@ export function isValidGuessValue(guess) {
 export function isValidGuestId(value) {
   return /^guest-[A-Za-z0-9_-]{8,80}$/.test(value);
 }
+
+/**
+ * Build a client-safe view of the opponent hand.
+ * @param {{attackerHand:any[],drawnCard:any|null,opponentHand:any[],failedGuesses:Record<string,number[]>}} args
+ */
+export function buildOpponentHandView({ attackerHand, drawnCard, opponentHand, failedGuesses }) {
+  return opponentHand.map((card) => ({
+    color: card.color,
+    number: card.isOpen ? card.number : null,
+    isOpen: card.isOpen,
+    id: card.id,
+    allowedGuesses: card.isOpen
+      ? []
+      : getAllowedGuesses({
+          attackerHand,
+          drawnCard,
+          opponentHand,
+          targetCardId: card.id,
+          failedGuesses: failedGuesses[card.id] || [],
+        }),
+  }));
+}
+
+/** @param {Array<{id:string,name:string,isCpu:boolean}>} players */
+export function buildPublicPlayers(players) {
+  return players.map((player) => ({
+    id: player.id,
+    name: player.name,
+    hand: [],
+    isCpu: player.isCpu,
+  }));
+}

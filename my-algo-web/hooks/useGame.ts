@@ -1,11 +1,8 @@
-// hooks/useGame.ts
 import { useState, useRef, useEffect, useCallback, useReducer } from "react";
 import { GameState, Card, LogItem, Lang, User } from "@/types";
 import { WS_URL, TRANSLATIONS } from "@/utils/constant";
 import { useToast } from "@/components/Toast";
 import { playSe, vibrate } from "@/utils/effects";
-
-// --- Types & Reducer ---
 
 type GameAction =
   | { type: "RESET" }
@@ -19,14 +16,14 @@ type GameAction =
   | {
       type: "SET_LAST_ATTACK";
       payload: {
-        targetIndex: number;
+        targetCardId: string;
         guess: number;
         isYourCard: boolean;
       } | null;
     }
   | {
       type: "SET_GUESS_MODAL";
-      payload: { show: boolean; targetIndex: number };
+      payload: { show: boolean; targetCardId: string | null };
     };
 
 type State = {
@@ -38,11 +35,11 @@ type State = {
   isSearching: boolean;
   gameLogs: LogItem[];
   lastAttack: {
-    targetIndex: number;
+    targetCardId: string;
     guess: number;
     isYourCard: boolean;
   } | null;
-  guessModal: { show: boolean; targetIndex: number };
+  guessModal: { show: boolean; targetCardId: string | null };
 };
 
 const initialState: State = {
@@ -54,7 +51,7 @@ const initialState: State = {
   isSearching: false,
   gameLogs: [],
   lastAttack: null,
-  guessModal: { show: false, targetIndex: -1 },
+  guessModal: { show: false, targetCardId: null },
 };
 
 function gameReducer(state: State, action: GameAction): State {
@@ -90,19 +87,23 @@ function gameReducer(state: State, action: GameAction): State {
   }
 }
 
-// --- Hook ---
+const GUEST_ID_KEY = "binarily_guest_id";
+function getOrCreateGuestId() {
+  if (typeof window === "undefined") return undefined;
+  const existing = window.localStorage.getItem(GUEST_ID_KEY);
+  if (existing?.startsWith("guest-")) return existing;
+  const id = `guest-${crypto.randomUUID()}`;
+  window.localStorage.setItem(GUEST_ID_KEY, id);
+  return id;
+}
 
 export function useGame(lang: Lang, user: User | null) {
   const t = TRANSLATIONS[lang];
   const { toasts, showToast, removeToast } = useToast();
-
   const [roomId, setRoomId] = useState("");
-  // isReconnecting は UI に「再接続中...」と出すために追加
   const [isReconnecting, setIsReconnecting] = useState(false);
-
   const [state, dispatch] = useReducer(gameReducer, initialState);
 
-  // Ref to access state inside callbacks/effects
   const stateRef = useRef(state);
   useEffect(() => {
     stateRef.current = state;
@@ -112,11 +113,8 @@ export function useGame(lang: Lang, user: User | null) {
   const pingIntervalRef = useRef<NodeJS.Timeout | null>(null);
   const timeoutRef = useRef<NodeJS.Timeout | null>(null);
   const shouldReconnectRef = useRef(true);
-
   const joinGameRef = useRef<(id: string) => void>(() => {});
   const guessModalClosingRef = useRef(false);
-
-  // --- Helpers ---
 
   const addLog = useCallback(
     (text: string, type: LogItem["type"] = "system") => {
@@ -134,7 +132,6 @@ export function useGame(lang: Lang, user: User | null) {
     }
   }, []);
 
-  // Cleanup on unmount
   useEffect(() => {
     return () => {
       shouldReconnectRef.current = false;
@@ -157,43 +154,34 @@ export function useGame(lang: Lang, user: User | null) {
   };
 
   const sendMessage = useCallback((msg: object) => {
-    if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN)
-      return false;
+    if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) return false;
     try {
       wsRef.current.send(JSON.stringify(msg));
       return true;
-    } catch (e) {
-      console.error(e);
+    } catch (error) {
+      console.error(error);
       return false;
     }
   }, []);
-
-  // --- WebSocket Logic ---
 
   const joinGame = useCallback(
     (id: string) => {
       if (!id) return;
       shouldReconnectRef.current = true;
       cleanupConnection();
-
-      // ローディング/再接続中表示
       setIsReconnecting(true);
 
       const ws = new WebSocket(`${WS_URL}/game/${id}`);
       wsRef.current = ws;
 
       ws.onopen = () => {
-        setIsReconnecting(false); // 接続成功で消す
+        setIsReconnecting(false);
         dispatch({ type: "SET_CONNECTED", payload: true });
-
-        const isCpu = id.includes("cpu=true");
         sendMessage({
           type: "JOIN",
-          mode: isCpu ? "cpu" : undefined,
-          userId: user?.id,
           userName: user?.name,
+          guestId: user ? undefined : getOrCreateGuestId(),
         });
-
         dispatch({ type: "JOINED", payload: true });
         dispatch({ type: "SET_HAS_MOVED", payload: false });
 
@@ -212,28 +200,29 @@ export function useGame(lang: Lang, user: User | null) {
             return;
           }
 
-          // 相手からの攻撃通知
           if (data.type === "ATTACK_NOTIFY") {
-            const myId = stateRef.current.gameState?.me.id;
+            const current = stateRef.current.gameState;
+            const myId = current?.me.id;
             const isMe = data.attackerId === myId;
 
             if (!isMe) {
-              // 攻撃された！
               vibrate([50, 50, 50]);
-              playSe("defense"); // 防御アラート音
-
+              playSe("defense");
               dispatch({
                 type: "SET_LAST_ATTACK",
                 payload: {
-                  targetIndex: data.targetIndex,
+                  targetCardId: data.targetCardId,
                   guess: data.guess,
                   isYourCard: true,
                 },
               });
 
+              const index = current?.me.hand.findIndex(
+                (card) => card.id === data.targetCardId
+              );
               addLog(
                 t.logDefended
-                  .replace("{i}", `${data.targetIndex + 1}`)
+                  .replace("{i}", index !== undefined && index >= 0 ? `${index + 1}` : "?")
                   .replace("{n}", `${data.guess}`),
                 "defense"
               );
@@ -242,68 +231,68 @@ export function useGame(lang: Lang, user: User | null) {
 
           if (data.type === "UPDATE_STATE") {
             const prev = stateRef.current.gameState;
-            const next = data;
+            const next = data as GameState;
 
-            // ログとSE判定
             if (prev) {
-              // 自分の手札が開いた (守備失敗)
-              if (prev.me && next.me) {
-                next.me.hand.forEach((c: Card, idx: number) => {
-                  if (!prev.me.hand[idx]?.isOpen && c.isOpen) {
-                    addLog(t.logRevealed, "defense");
-                    playSe("lose"); // ダメージ音
-                  }
-                });
+              for (const card of next.me.hand) {
+                const previous = prev.me.hand.find((item) => item.id === card.id);
+                if (previous && !previous.isOpen && card.isOpen) {
+                  addLog(t.logRevealed, "defense");
+                  playSe("lose");
+                }
               }
-              // 相手の手札が開いた (攻撃成功)
-              if (prev.opponentHand && next.opponentHand) {
-                next.opponentHand.forEach((c: Card, idx: number) => {
-                  if (!prev.opponentHand[idx]?.isOpen && c.isOpen) {
-                    addLog(t.logRevealed, "attack");
-                    playSe("select"); // 成功音
-                  }
-                });
+
+              for (const card of next.opponentHand) {
+                const previous = prev.opponentHand.find((item) => item.id === card.id);
+                if (previous && !previous.isOpen && card.isOpen) {
+                  addLog(t.logRevealed, "attack");
+                  playSe("select");
+                }
               }
 
               const isMyTurnNow = next.turnPlayerId === next.me.id;
               const wasMyTurn = prev.turnPlayerId === prev.me.id;
-
               if (!wasMyTurn && isMyTurnNow) {
-                dispatch({ type: "SET_HAS_MOVED", payload: false });
-                vibrate(200); // 自分のターン開始で振動
-                playSe("select"); // ターン開始音
+                vibrate(200);
+                playSe("select");
               }
             }
 
             dispatch({ type: "SET_GAME_STATE", payload: next });
+            dispatch({ type: "SET_HAS_MOVED", payload: !!next.canStay });
             stopProcessing();
 
-            // モーダル制御
             const gm = stateRef.current.guessModal;
-            if (gm.show && gm.targetIndex >= 0) {
-              if (next.opponentHand?.[gm.targetIndex]?.isOpen) {
+            if (gm.show && gm.targetCardId) {
+              const selected = next.opponentHand.find(
+                (card) => card.id === gm.targetCardId
+              );
+              if (!selected || selected.isOpen) {
                 dispatch({
                   type: "SET_GUESS_MODAL",
-                  payload: { show: false, targetIndex: -1 },
+                  payload: { show: false, targetCardId: null },
                 });
               }
             }
+
             if (next.phase === "playing" && next.turnPlayerId !== next.me.id) {
               dispatch({
                 type: "SET_GUESS_MODAL",
-                payload: { show: false, targetIndex: -1 },
+                payload: { show: false, targetCardId: null },
               });
             }
           }
 
           if (data.type === "ERROR") {
-            showToast(data.message, "error"); // Toastに変更
+            showToast(data.message, "error");
             stopProcessing();
-            dispatch({ type: "JOINED", payload: false });
-            shouldReconnectRef.current = false;
+            if (data.fatal) {
+              dispatch({ type: "JOINED", payload: false });
+              shouldReconnectRef.current = false;
+            }
           }
-        } catch (e) {
-          console.error(e);
+        } catch (error) {
+          console.error(error);
         }
       };
 
@@ -313,12 +302,10 @@ export function useGame(lang: Lang, user: User | null) {
         if (pingIntervalRef.current) clearInterval(pingIntervalRef.current);
 
         if (shouldReconnectRef.current && stateRef.current.joined) {
-          setIsReconnecting(true); // 切断時は再接続中を表示
+          setIsReconnecting(true);
           setTimeout(() => {
-            if (shouldReconnectRef.current) {
-              joinGameRef.current(id);
-            }
-          }, 5000);
+            if (shouldReconnectRef.current) joinGameRef.current(id);
+          }, 3000);
         } else {
           setIsReconnecting(false);
           dispatch({ type: "JOINED", payload: false });
@@ -326,7 +313,7 @@ export function useGame(lang: Lang, user: User | null) {
         }
       };
     },
-    [cleanupConnection, sendMessage, addLog, lang, t, user, showToast]
+    [cleanupConnection, sendMessage, addLog, t, user, showToast]
   );
 
   const joinRanked = useCallback(() => {
@@ -340,9 +327,7 @@ export function useGame(lang: Lang, user: User | null) {
     ws.onopen = () => {
       dispatch({ type: "SET_CONNECTED", payload: true });
       addLog(
-        lang === "ja"
-          ? "対戦相手を探しています..."
-          : "Searching for opponent...",
+        lang === "ja" ? "対戦相手を探しています..." : "Searching for opponent...",
         "system"
       );
     };
@@ -351,16 +336,12 @@ export function useGame(lang: Lang, user: User | null) {
       try {
         const data = JSON.parse(event.data);
         if (data.type === "MATCH_FOUND") {
-          const { roomId, mode } = data;
           ws.close();
           dispatch({ type: "SET_SEARCHING", payload: false });
-          const params = new URLSearchParams();
-          params.set("ranked", "true");
-          if (mode === "cpu") params.set("cpu", "true");
-          joinGame(`${roomId}?${params.toString()}`);
+          joinGame(data.roomId);
         }
-      } catch (e) {
-        console.error(e);
+      } catch (error) {
+        console.error(error);
       }
     };
 
@@ -371,6 +352,7 @@ export function useGame(lang: Lang, user: User | null) {
   }, [cleanupConnection, joinGame, addLog, lang]);
 
   const cancelSearch = useCallback(() => {
+    shouldReconnectRef.current = false;
     if (wsRef.current) wsRef.current.close();
     dispatch({ type: "SET_SEARCHING", payload: false });
   }, []);
@@ -379,39 +361,41 @@ export function useGame(lang: Lang, user: User | null) {
     joinGameRef.current = joinGame;
   }, [joinGame]);
 
-  const setGuessModal = (payload: { show: boolean; targetIndex: number }) => {
+  const setGuessModal = (payload: { show: boolean; targetCardId: string | null }) => {
     dispatch({ type: "SET_GUESS_MODAL", payload });
   };
 
   const handleAttack = useCallback(
     (guess: number) => {
       if (stateRef.current.isProcessing) return;
-      const targetIndex = stateRef.current.guessModal.targetIndex;
+      const targetCardId = stateRef.current.guessModal.targetCardId;
+      if (!targetCardId) return;
 
       guessModalClosingRef.current = true;
       dispatch({
         type: "SET_GUESS_MODAL",
-        payload: { show: false, targetIndex: -1 },
+        payload: { show: false, targetCardId: null },
       });
       setTimeout(() => (guessModalClosingRef.current = false), 500);
 
       startProcessing();
-
       dispatch({
         type: "SET_LAST_ATTACK",
-        payload: { targetIndex, guess, isYourCard: false },
+        payload: { targetCardId, guess, isYourCard: false },
       });
 
-      const success = sendMessage({ type: "ATTACK", targetIndex, guess });
+      const success = sendMessage({ type: "ATTACK", targetCardId, guess });
       if (success) {
-        dispatch({ type: "SET_HAS_MOVED", payload: true });
+        const index = stateRef.current.gameState?.opponentHand.findIndex(
+          (card) => card.id === targetCardId
+        );
         addLog(
           t.logAttacked
-            .replace("{i}", `${targetIndex + 1}`)
+            .replace("{i}", index !== undefined && index >= 0 ? `${index + 1}` : "?")
             .replace("{n}", `${guess}`),
           "attack"
         );
-        playSe("attack"); // 攻撃SE
+        playSe("attack");
       } else {
         stopProcessing();
       }
@@ -420,15 +404,13 @@ export function useGame(lang: Lang, user: User | null) {
   );
 
   const handleStay = useCallback(() => {
-    if (stateRef.current.isProcessing) return;
-    if (!stateRef.current.hasMoved) return;
-
+    if (stateRef.current.isProcessing || !stateRef.current.hasMoved) return;
     startProcessing();
     const success = sendMessage({ type: "STAY" });
     if (success) {
       addLog(lang === "ja" ? "パスしました" : "Passed turn", "defense");
       dispatch({ type: "SET_LAST_ATTACK", payload: null });
-      playSe("select"); // 決定音
+      playSe("select");
     } else {
       stopProcessing();
     }
@@ -437,10 +419,8 @@ export function useGame(lang: Lang, user: User | null) {
   return {
     roomId,
     setRoomId,
-    // state spread
     ...state,
-    isReconnecting, // 追加
-    // methods
+    isReconnecting,
     setGuessModal,
     joinGame,
     joinRanked,
@@ -448,7 +428,6 @@ export function useGame(lang: Lang, user: User | null) {
     handleAttack,
     handleStay,
     guessModalClosingRef,
-    // toast methods to expose if needed by components
     toasts,
     removeToast,
   };

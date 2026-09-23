@@ -3,23 +3,33 @@ export type Card = {
   number: number | null;
   isOpen: boolean;
   id: string;
+  allowedGuesses?: number[];
 };
 
 export type Player = {
   id: string;
-  name?: string; // 追加
+  name?: string;
   hand: Card[];
+  isCpu?: boolean;
+};
+
+export type RatingUpdate = {
+  old: number;
+  new: number;
+  diff: number;
 };
 
 export type GameState = {
   phase: string;
   turnPlayerId: string | null;
   me: Player;
-  players: Player[]; // 追加
+  players: Player[];
   opponentHand: Card[];
   drawnCard: Card | null;
   winner: string | null;
   deckCount: number;
+  canStay?: boolean;
+  ratingUpdates?: Record<string, RatingUpdate> | null;
 };
 
 export type LogItem = {

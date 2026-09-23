@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useMemo, useRef } from "react";
+import { useState, useMemo, useRef } from "react";
 import { useRouter } from "next/navigation";
 import {
   CheckCircle2,
@@ -170,7 +170,14 @@ export default function TutorialPage() {
   // Helper to update step
   const nextStep = () => {
     if (stepIndex < STEPS.length - 1) {
-      setStepIndex((prev) => prev + 1);
+      const nextIndex = stepIndex + 1;
+      if (STEPS[nextIndex].id === "draw") {
+        setGameState((prev) => ({
+          ...prev,
+          drawnCard: createCard("white", 4, false, "drawn"),
+        }));
+      }
+      setStepIndex(nextIndex);
     } else {
       router.push("/");
     }
@@ -185,17 +192,6 @@ export default function TutorialPage() {
   const removeToast = (id: string) => {
     setToasts((prev) => prev.filter((t) => t.id !== id));
   };
-
-  // --- Step Effects ---
-  useEffect(() => {
-    // Step specific state changes
-    if (currentStep.id === "draw") {
-      setGameState((prev) => ({
-        ...prev,
-        drawnCard: createCard("white", 4, false, "drawn"),
-      }));
-    }
-  }, [currentStep.id]);
 
   // --- Handlers ---
 

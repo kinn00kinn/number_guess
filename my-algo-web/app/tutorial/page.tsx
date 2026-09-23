@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useRef } from "react";
 import { useRouter } from "next/navigation";
 import {
   CheckCircle2,
@@ -163,6 +163,7 @@ export default function TutorialPage() {
   const [toasts, setToasts] = useState<ToastItem[]>([]);
   const [guessModal, setGuessModal] = useState<{ show: boolean; targetCardId: string | null }>({ show: false, targetCardId: null });
   const [hasMoved, setHasMoved] = useState(false);
+  const toastIdRef = useRef(0);
 
   const currentStep = STEPS[stepIndex];
 
@@ -176,7 +177,7 @@ export default function TutorialPage() {
   };
 
   const addToast = (message: string, type: "info" | "success" | "error" = "info") => {
-    const id = Math.random().toString(36).substring(7);
+    const id = `tutorial-toast-${++toastIdRef.current}`;
     setToasts((prev) => [...prev, { id, message, type }]);
     setTimeout(() => removeToast(id), 3000);
   };

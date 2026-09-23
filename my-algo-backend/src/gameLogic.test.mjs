@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { cardRank, getAllowedGuesses, isValidGuessValue, isValidGuestId, sortCards } from './gameLogic.js';
+import { buildOpponentHandView, buildPublicPlayers, cardRank, getAllowedGuesses, isValidGuessValue, isValidGuestId, sortCards } from './gameLogic.js';
 
 const card = (color, number, isOpen, id) => ({ color, number, isOpen, id });
 
@@ -67,4 +67,17 @@ test('guess and guest ID validation reject malformed input', () => {
   assert.equal(isValidGuessValue(2.5), false);
   assert.equal(isValidGuestId('guest-12345678'), true);
   assert.equal(isValidGuestId('someone-12345678'), false);
+});
+
+
+test('client-safe views never expose hidden opponent numbers or hands', () => {
+  const opponent = [card('black', 11, false, 'opaque-card-id'), card('white', 7, true, 'open-id')];
+  const view = buildOpponentHandView({ attackerHand: [], drawnCard: null, opponentHand: opponent, failedGuesses: {} });
+  assert.equal(view[0].number, null);
+  assert.equal(view[1].number, 7);
+  assert.equal(view[0].id, 'opaque-card-id');
+
+  const players = buildPublicPlayers([{ id: 'p1', name: 'A', isCpu: false, hand: [card('black', 11, false, 'secret')] }]);
+  assert.deepEqual(players[0].hand, []);
+  assert.equal(JSON.stringify(players).includes('secret'), false);
 });

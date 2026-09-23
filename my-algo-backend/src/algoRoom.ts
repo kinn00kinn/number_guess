@@ -1,6 +1,6 @@
 import { DurableObject } from "cloudflare:workers";
+import { getAllowedGuesses, isValidGuestId, isValidGuessValue, sortCards } from "./gameLogic.js";
 
-// --- 型定義 ---
 type CardColor = "black" | "white";
 
 export interface Card {
@@ -31,6 +31,7 @@ export interface GameState {
   drawnCard: Card | null;
   winner: string | null;
   ratingUpdates: Record<string, RatingUpdate> | null;
+  turnHasSuccessfulAttack: boolean;
 }
 
 export type Bindings = {
@@ -39,71 +40,187 @@ export type Bindings = {
   DB: D1Database;
 };
 
+type SocketAttachment = {
+  authUserId: string | null;
+  playerId: string | null;
+};
+
+type PersistedRoom = {
+  state: GameState;
+  isCpuMode: boolean;
+  isRanked: boolean;
+  allowedPlayerIds: string[] | null;
+  failedGuesses: Record<string, number[]>;
+  reservedUntil: number | null;
+  disconnectDeadlines: Record<string, number>;
+  ratingCommitted: boolean;
+};
+
+const ROOM_STORAGE_KEY = "room";
+const RECONNECT_GRACE_MS = 15_000;
+const RESERVATION_MS = 5 * 60_000;
+
+const freshState = (): GameState => ({
+  phase: "waiting",
+  players: [],
+  deck: [],
+  turnPlayerId: null,
+  drawnCard: null,
+  winner: null,
+  ratingUpdates: null,
+  turnHasSuccessfulAttack: false,
+});
+
 export class AlgoRoom extends DurableObject {
   sessions: Map<WebSocket, string> = new Map();
-  state: GameState;
+  state: GameState = freshState();
   env: Bindings;
 
-  isCpuMode: boolean = false;
-  isRanked: boolean = false;
+  isCpuMode = false;
+  isRanked = false;
+  allowedPlayerIds: string[] | null = null;
+  failedGuesses: Record<string, number[]> = {};
+  reservedUntil: number | null = null;
+  disconnectDeadlines: Record<string, number> = {};
+  ratingCommitted = false;
 
   constructor(ctx: DurableObjectState, env: Bindings) {
     super(ctx, env);
     this.env = env;
-    this.state = {
-      phase: "waiting",
-      players: [],
-      deck: [],
-      turnPlayerId: null,
-      drawnCard: null,
-      winner: null,
-      ratingUpdates: null,
+
+    this.ctx.blockConcurrencyWhile(async () => {
+      const saved = await this.ctx.storage.get<PersistedRoom>(ROOM_STORAGE_KEY);
+      if (saved) {
+        this.state = saved.state;
+        this.isCpuMode = saved.isCpuMode;
+        this.isRanked = saved.isRanked;
+        this.allowedPlayerIds = saved.allowedPlayerIds;
+        this.failedGuesses = saved.failedGuesses || {};
+        this.reservedUntil = saved.reservedUntil;
+        this.disconnectDeadlines = saved.disconnectDeadlines || {};
+        this.ratingCommitted = !!saved.ratingCommitted;
+      }
+
+      for (const ws of this.ctx.getWebSockets()) {
+        try {
+          const attachment = ws.deserializeAttachment() as SocketAttachment | null;
+          if (attachment?.playerId) this.sessions.set(ws, attachment.playerId);
+        } catch {
+          // Ignore sockets created before attachments were introduced.
+        }
+      }
+    });
+  }
+
+  private async persist() {
+    const snapshot: PersistedRoom = {
+      state: this.state,
+      isCpuMode: this.isCpuMode,
+      isRanked: this.isRanked,
+      allowedPlayerIds: this.allowedPlayerIds,
+      failedGuesses: this.failedGuesses,
+      reservedUntil: this.reservedUntil,
+      disconnectDeadlines: this.disconnectDeadlines,
+      ratingCommitted: this.ratingCommitted,
     };
+    await this.ctx.storage.put(ROOM_STORAGE_KEY, snapshot);
+  }
+
+  private async resetRoom() {
+    this.state = freshState();
+    this.isCpuMode = false;
+    this.isRanked = false;
+    this.allowedPlayerIds = null;
+    this.failedGuesses = {};
+    this.reservedUntil = null;
+    this.disconnectDeadlines = {};
+    this.ratingCommitted = false;
+    await this.ctx.storage.deleteAlarm();
+    await this.persist();
+  }
+
+  private hasLiveSession(playerId: string) {
+    for (const id of this.sessions.values()) {
+      if (id === playerId) return true;
+    }
+    return false;
+  }
+
+  private async scheduleDisconnectAlarm() {
+    const deadlines = Object.values(this.disconnectDeadlines);
+    if (deadlines.length === 0) {
+      await this.ctx.storage.deleteAlarm();
+      return;
+    }
+    await this.ctx.storage.setAlarm(Math.min(...deadlines));
   }
 
   async fetch(request: Request): Promise<Response> {
     const url = new URL(request.url);
-    
-    // CPU対戦フラグの確認
-    if (url.searchParams.get("cpu") === "true") {
-      this.isCpuMode = true;
+
+    if (url.pathname === "/reserve" && request.method === "POST") {
+      const now = Date.now();
+      const reserved = this.reservedUntil !== null && this.reservedUntil > now;
+      if (this.state.players.length > 0 || reserved || this.state.phase === "playing") {
+        return new Response("occupied", { status: 409 });
+      }
+      if (this.state.phase === "finished") await this.resetRoom();
+      this.reservedUntil = now + RESERVATION_MS;
+      await this.persist();
+      return Response.json({ reservedUntil: this.reservedUntil });
     }
-    // ランクマッチフラグの確認
-    if (url.searchParams.get("ranked") === "true") {
-      this.isRanked = true;
+
+    if (url.pathname === "/configure" && request.method === "POST") {
+      if (this.state.players.length > 0 || this.state.phase === "playing") {
+        return new Response("room already active", { status: 409 });
+      }
+      const config = (await request.json()) as {
+        ranked: boolean;
+        cpu: boolean;
+        allowedPlayerIds: string[];
+      };
+      this.isRanked = !!config.ranked;
+      this.isCpuMode = !!config.cpu;
+      this.allowedPlayerIds = Array.from(new Set(config.allowedPlayerIds || []));
+      this.reservedUntil = null;
+      await this.persist();
+      return Response.json({ ok: true });
     }
 
     const upgradeHeader = request.headers.get("Upgrade");
-    if (!upgradeHeader || upgradeHeader !== "websocket") {
+    if (!upgradeHeader || upgradeHeader.toLowerCase() !== "websocket") {
       return new Response("Expected Upgrade: websocket", { status: 426 });
     }
+
     const { 0: client, 1: server } = new WebSocketPair();
+    const authUserId = request.headers.get("x-binarily-user-id") || null;
+    server.serializeAttachment({ authUserId, playerId: null } satisfies SocketAttachment);
     this.ctx.acceptWebSocket(server);
-
-    // CPUモードなら、最初の接続時にCPUをプレイヤーとして登録しておく（まだプレイヤーが0人の場合）
-    if (this.isCpuMode && this.state.players.length === 0) {
-       // プレイヤーが入ってきたタイミングでCPUを追加する処理は JOIN で行う方が安全
-       // ここではフラグだけ覚えておく手もあるが、URLパラメータはJOINメッセージには含まれないので
-       // セッションに紐付けるか、あるいはJOIN時にクライアントから送ってもらう。
-       // 今回はシンプルに、JOIN時に1人目がCPUモードで入ってきたら、即座にCPUも参加させるロジックにする。
-    }
-
     return new Response(null, { status: 101, webSocket: client });
   }
 
-  // 状態配信
   broadcastState() {
     this.sessions.forEach((playerId, ws) => {
       const myData = this.state.players.find((p) => p.id === playerId);
-      // 相手データ（CPU含む）
       const opponentData = this.state.players.find((p) => p.id !== playerId);
-
       if (!myData) return;
 
       const opponentHandMasked =
-        opponentData?.hand.map((c) => ({
-          ...c,
-          number: c.isOpen ? c.number : null,
+        opponentData?.hand.map((card) => ({
+          color: card.color,
+          number: card.isOpen ? card.number : null,
+          isOpen: card.isOpen,
+          id: card.id,
+          allowedGuesses: card.isOpen
+            ? []
+            : getAllowedGuesses({
+                attackerHand: myData.hand,
+                drawnCard:
+                  this.state.turnPlayerId === playerId ? this.state.drawnCard : null,
+                opponentHand: opponentData.hand,
+                targetCardId: card.id,
+                failedGuesses: this.failedGuesses[card.id] || [],
+              }),
         })) || [];
 
       let drawnCardMasked = null;
@@ -123,411 +240,448 @@ export class AlgoRoom extends DurableObject {
         phase: this.state.phase,
         turnPlayerId: this.state.turnPlayerId,
         me: myData,
-        players: this.state.players, // 追加
+        players: this.state.players.map((p) => ({
+          id: p.id,
+          name: p.name,
+          hand: [],
+          isCpu: p.isCpu,
+        })),
         opponentHand: opponentHandMasked,
         drawnCard: drawnCardMasked,
         winner: this.state.winner,
         deckCount: this.state.deck.length,
         ratingUpdates: this.state.ratingUpdates,
+        canStay:
+          this.state.turnPlayerId === playerId &&
+          this.state.turnHasSuccessfulAttack,
       });
 
       try {
         ws.send(payload);
-      } catch (e) {
-        // 送信エラーは無視
+      } catch {
+        // Close handling will clean stale sessions.
       }
     });
   }
 
   async webSocketMessage(ws: WebSocket, message: string | ArrayBuffer) {
-    const data = JSON.parse(message as string);
+    let data: any;
+    try {
+      data = JSON.parse(message as string);
+    } catch {
+      ws.send(JSON.stringify({ type: "ERROR", message: "Invalid message", fatal: false }));
+      return;
+    }
+
     const senderId = this.sessions.get(ws);
 
     if (data.type === "PING") {
       try {
         ws.send(JSON.stringify({ type: "PONG" }));
-      } catch (e) {}
+      } catch {}
       return;
     }
 
-    // 1. JOIN
     if (data.type === "JOIN") {
-      // ユーザーIDの決定
-      const playerId = data.userId || `User-${Math.random().toString(36).slice(-4)}`;
-      let playerName = data.userName || playerId;
+      const attachment = (ws.deserializeAttachment() || {
+        authUserId: null,
+        playerId: null,
+      }) as SocketAttachment;
+      const authUserId = attachment.authUserId;
 
-      // DBから名前を取得 (userIdがUUID形式の場合のみ)
-      if (playerId.length > 20) { // 簡易チェック
+      let playerId: string;
+      if (this.isRanked) {
+        if (!authUserId || !this.allowedPlayerIds?.includes(authUserId)) {
+          ws.send(JSON.stringify({ type: "ERROR", message: "Unauthorized ranked room", fatal: true }));
+          ws.close(1008, "Unauthorized");
+          return;
+        }
+        playerId = authUserId;
+      } else if (authUserId) {
+        playerId = authUserId;
+      } else if (typeof data.guestId === "string" && isValidGuestId(data.guestId)) {
+        playerId = data.guestId;
+      } else {
+        playerId = `guest-${crypto.randomUUID()}`;
+      }
+
+      let playerName =
+        typeof data.userName === "string" && data.userName.trim()
+          ? data.userName.trim().slice(0, 20)
+          : playerId.startsWith("guest-")
+            ? `Guest-${playerId.slice(-4)}`
+            : playerId;
+
+      if (authUserId) {
         try {
-          const user = await this.env.DB.prepare("SELECT name FROM users WHERE id = ?").bind(playerId).first<any>();
-          if (user && user.name) {
-            playerName = user.name;
-          }
-        } catch (e) {
-          // DBエラーは無視してデフォルト名を使う
+          const user = await this.env.DB.prepare("SELECT name FROM users WHERE id = ?")
+            .bind(authUserId)
+            .first<{ name: string }>();
+          if (user?.name) playerName = user.name;
+        } catch {
+          // Keep fallback name if D1 is temporarily unavailable.
         }
       }
 
-      // 既に自分がいるか確認（再接続）
-      const existingPlayer = this.state.players.find(p => p.id === playerId);
-      
+      const existingPlayer = this.state.players.find((p) => p.id === playerId);
       if (!existingPlayer && this.state.players.length >= 2) {
-        ws.send(JSON.stringify({ type: "ERROR", message: "満員です" }));
+        ws.send(JSON.stringify({ type: "ERROR", message: "満員です", fatal: true }));
         return;
       }
 
       this.sessions.set(ws, playerId);
-      
+      ws.serializeAttachment({ authUserId, playerId } satisfies SocketAttachment);
+      delete this.disconnectDeadlines[playerId];
+
       if (!existingPlayer) {
         this.state.players.push({ id: playerId, name: playerName, hand: [], isCpu: false });
       } else {
-        // 名前更新（もし変わっていれば）
         existingPlayer.name = playerName;
       }
 
-      // CPUモード判定 (クライアントから送ってもらう or URLパラメータ)
-      // ここではクライアントが "cpu": true を送ってくると仮定、または1人目が待機中にタイムアウトでCPU戦になった場合
-      if ((data.mode === "cpu" || this.isCpuMode) && this.state.players.length === 1) {
-         this.addCpuPlayer();
+      if (this.isCpuMode && !this.state.players.some((p) => p.isCpu)) {
+        this.addCpuPlayer();
       }
 
+      this.reservedUntil = null;
+      await this.persist();
+      await this.scheduleDisconnectAlarm();
       this.broadcastState();
 
-      if (this.state.players.length === 2) {
-        // 既にプレイ中なら開始しない
-        if (this.state.phase === "waiting") {
-          this.startGame();
-        }
+      if (this.state.players.length === 2 && this.state.phase === "waiting") {
+        await this.startGame();
       }
       return;
     }
 
-    // ゲーム中のアクション処理
-    if (
-      this.state.phase !== "playing" ||
-      this.state.turnPlayerId !== senderId
-    ) {
-      if (["ATTACK", "STAY"].includes(data.type)) {
-        this.broadcastState();
-      }
+    if (this.state.phase !== "playing" || this.state.turnPlayerId !== senderId) {
+      if (["ATTACK", "STAY"].includes(data.type)) this.broadcastState();
       return;
     }
 
-    // 2. ATTACK
     if (data.type === "ATTACK") {
-      await this.handleAttack(senderId!, data.targetIndex, data.guess);
+      await this.handleAttack(senderId!, data.targetCardId, data.guess);
+      return;
     }
 
-    // 3. STAY
     if (data.type === "STAY") {
-      this.handleStay(senderId!);
+      await this.handleStay(senderId!);
     }
   }
 
   addCpuPlayer() {
-    const cpuId = "CPU";
-    this.state.players.push({ id: cpuId, name: "CPU", hand: [], isCpu: true });
+    if (this.state.players.some((p) => p.isCpu)) return;
+    this.state.players.push({ id: "CPU", name: "CPU", hand: [], isCpu: true });
   }
 
-  async handleAttack(attackerId: string, targetIndex: number, guess: number) {
-    const opponent = this.state.players.find((p) => p.id !== attackerId);
-    if (!opponent || !opponent.hand[targetIndex] || opponent.hand[targetIndex].isOpen) {
+  async handleAttack(attackerId: string, targetCardId: unknown, guess: unknown) {
+    if (typeof targetCardId !== "string" || !isValidGuessValue(guess)) {
       this.broadcastState();
       return;
     }
 
-    // 攻撃通知
+    const guessedNumber = guess as number;
+
+    const attacker = this.state.players.find((p) => p.id === attackerId);
+    const opponent = this.state.players.find((p) => p.id !== attackerId);
+    if (!attacker || !opponent) return;
+
+    const targetCard = opponent.hand.find((card) => card.id === targetCardId);
+    if (!targetCard || targetCard.isOpen) {
+      this.broadcastState();
+      return;
+    }
+
+    const allowedGuesses = getAllowedGuesses({
+      attackerHand: attacker.hand,
+      drawnCard: this.state.drawnCard,
+      opponentHand: opponent.hand,
+      targetCardId,
+      failedGuesses: this.failedGuesses[targetCardId] || [],
+    });
+    if (!allowedGuesses.includes(guessedNumber)) {
+      try {
+        const attackerWs = [...this.sessions.entries()].find(([, id]) => id === attackerId)?.[0];
+        attackerWs?.send(JSON.stringify({ type: "ERROR", message: "その数字は公開情報と矛盾しています", fatal: false }));
+      } catch {}
+      this.broadcastState();
+      return;
+    }
+
     const notifyPayload = JSON.stringify({
       type: "ATTACK_NOTIFY",
-      attackerId: attackerId,
-      targetIndex: targetIndex,
-      guess: guess,
+      attackerId,
+      targetCardId,
+      guess: guessedNumber,
     });
     this.sessions.forEach((_, clientWs) => {
-      try { clientWs.send(notifyPayload); } catch (e) {}
+      try {
+        clientWs.send(notifyPayload);
+      } catch {}
     });
 
-    const targetCard = opponent.hand[targetIndex];
-
-    if (targetCard.number === guess) {
-      // HIT
+    if (targetCard.number === guessedNumber) {
       targetCard.isOpen = true;
-      if (opponent.hand.every((c) => c.isOpen)) {
+      this.state.turnHasSuccessfulAttack = true;
+      await this.persist();
+
+      if (opponent.hand.every((card) => card.isOpen)) {
         await this.finishGame(attackerId);
       } else {
-        // 続けて攻撃可能だが、CPUの場合はどうするか？
-        // CPUなら確率でStayさせるなどのロジックが必要。
-        // 人間の場合はクライアントが選択する。
         this.broadcastState();
-        
-        // CPUの手番でHITした場合、連続攻撃するか判断
-        if (this.state.players.find(p => p.id === attackerId)?.isCpu) {
-           this.triggerCpuAction(2000); // 2秒後に再考
-        }
+        if (attacker.isCpu) this.triggerCpuAction(1200);
       }
-    } else {
-      // MISS
-      if (this.state.drawnCard) {
-        this.state.drawnCard.isOpen = true;
-        this.insertDrawnCardToHand(attackerId);
-      }
-      this.changeTurn();
+      return;
     }
-  }
 
-  handleStay(playerId: string) {
+    const misses = new Set(this.failedGuesses[targetCardId] || []);
+    misses.add(guessedNumber);
+    this.failedGuesses[targetCardId] = [...misses].sort((a, b) => a - b);
+
     if (this.state.drawnCard) {
-      this.insertDrawnCardToHand(playerId);
+      this.state.drawnCard.isOpen = true;
+      this.insertDrawnCardToHand(attackerId);
     }
-    this.changeTurn();
-    this.broadcastState();
+    await this.changeTurn();
   }
 
-  startGame() {
+  async handleStay(playerId: string) {
+    if (!this.state.turnHasSuccessfulAttack) {
+      this.broadcastState();
+      return;
+    }
+    if (this.state.drawnCard) this.insertDrawnCardToHand(playerId);
+    await this.changeTurn();
+  }
+
+  async startGame() {
     this.state.phase = "playing";
     this.state.winner = null;
     this.state.ratingUpdates = null;
+    this.state.turnHasSuccessfulAttack = false;
+    this.failedGuesses = {};
+    this.ratingCommitted = false;
     this.state.deck = [];
-    for (let i = 0; i < 12; i++) {
-      this.state.deck.push({ color: "black", number: i, isOpen: false, id: `b-${i}` });
-      this.state.deck.push({ color: "white", number: i, isOpen: false, id: `w-${i}` });
+
+    for (let number = 0; number < 12; number++) {
+      this.state.deck.push({
+        color: "black",
+        number,
+        isOpen: false,
+        id: crypto.randomUUID(),
+      });
+      this.state.deck.push({
+        color: "white",
+        number,
+        isOpen: false,
+        id: crypto.randomUUID(),
+      });
     }
-    // Shuffle
+
     for (let i = this.state.deck.length - 1; i > 0; i--) {
       const j = Math.floor(Math.random() * (i + 1));
       [this.state.deck[i], this.state.deck[j]] = [this.state.deck[j], this.state.deck[i]];
     }
 
-    // Deal
-    this.state.players.forEach((p) => {
-      p.hand = this.state.deck.splice(0, 4);
-      this.sortHand(p.hand);
+    this.state.players.forEach((player) => {
+      player.hand = this.state.deck.splice(0, 4);
+      sortCards(player.hand);
     });
 
     this.state.turnPlayerId = this.state.players[0].id;
     this.drawCard();
+    await this.persist();
     this.broadcastState();
 
-    // 先攻がCPUなら思考開始
-    const firstPlayer = this.state.players[0];
-    if (firstPlayer.isCpu) {
-      this.triggerCpuAction();
-    }
+    if (this.state.players[0].isCpu) this.triggerCpuAction();
   }
 
   drawCard() {
-    if (this.state.deck.length > 0) {
-      this.state.drawnCard = this.state.deck.pop() || null;
-    } else {
-      this.state.drawnCard = null;
-    }
+    this.state.drawnCard = this.state.deck.pop() || null;
   }
 
-  changeTurn() {
-    const currentIndex = this.state.players.findIndex(
-      (p) => p.id === this.state.turnPlayerId
-    );
+  async changeTurn() {
+    const currentIndex = this.state.players.findIndex((p) => p.id === this.state.turnPlayerId);
+    if (currentIndex < 0 || this.state.players.length < 2) return;
     const nextIndex = (currentIndex + 1) % 2;
     const nextPlayer = this.state.players[nextIndex];
     this.state.turnPlayerId = nextPlayer.id;
+    this.state.turnHasSuccessfulAttack = false;
     this.drawCard();
+    await this.persist();
     this.broadcastState();
-
-    if (nextPlayer.isCpu) {
-      this.triggerCpuAction();
-    }
+    if (nextPlayer.isCpu) this.triggerCpuAction();
   }
 
   insertDrawnCardToHand(playerId: string) {
     if (!this.state.drawnCard) return;
     const player = this.state.players.find((p) => p.id === playerId);
-    if (player) {
-      player.hand.push(this.state.drawnCard);
-      this.sortHand(player.hand);
-      this.state.drawnCard = null;
-    }
-  }
-
-  sortHand(hand: Card[]) {
-    hand.sort((a, b) => {
-      if (a.number !== b.number) return a.number - b.number;
-      return a.color === "black" ? -1 : 1;
-    });
+    if (!player) return;
+    player.hand.push(this.state.drawnCard);
+    sortCards(player.hand);
+    this.state.drawnCard = null;
   }
 
   async finishGame(winnerId: string) {
+    if (this.state.phase === "finished") return;
     this.state.phase = "finished";
     this.state.winner = winnerId;
-    
-    // レート計算と保存
-    try {
-      const updates = await this.updateRatings(winnerId);
-      this.state.ratingUpdates = updates;
-    } catch (e) {
-      console.error("Failed to update ratings:", e);
-    }
+    this.state.turnHasSuccessfulAttack = false;
+    await this.persist();
 
+    if (!this.ratingCommitted) {
+      try {
+        this.state.ratingUpdates = await this.updateRatings(winnerId);
+        this.ratingCommitted = true;
+      } catch (error) {
+        console.error("Failed to update ratings:", error);
+      }
+      await this.persist();
+    }
     this.broadcastState();
   }
 
   async updateRatings(winnerId: string): Promise<Record<string, RatingUpdate> | null> {
-    // ランクマッチでない場合はレート更新しない
-    if (!this.isRanked) {
-      console.log("Not a ranked match. Skipping rating update.");
-      return null;
-    }
+    if (!this.isRanked) return null;
 
-    const winner = this.state.players.find(p => p.id === winnerId);
-    const loser = this.state.players.find(p => p.id !== winnerId);
+    const winner = this.state.players.find((p) => p.id === winnerId);
+    const loser = this.state.players.find((p) => p.id !== winnerId);
     if (!winner || !loser) return null;
 
-    console.log(`updateRatings called. Winner: ${winner.id}, Loser: ${loser.id}`);
-
-    // Helper to get rate safely
     const getRate = async (id: string) => {
       try {
-        const user = await this.env.DB.prepare("SELECT rate FROM users WHERE id = ?").bind(id).first<any>();
+        const user = await this.env.DB.prepare("SELECT rate FROM users WHERE id = ?")
+          .bind(id)
+          .first<{ rate: number }>();
         return user?.rate ?? 1500;
-      } catch (e) {
+      } catch {
         return 1500;
       }
     };
 
-    // CPU Match
     if (winner.isCpu || loser.isCpu) {
       const isPlayerWinner = !winner.isCpu;
       const player = isPlayerWinner ? winner : loser;
-      
       const currentRate = await getRate(player.id);
-      // Win: +10, Lose: -10
       const diff = isPlayerWinner ? 10 : -10;
       const newRate = Math.max(0, currentRate + diff);
 
-      try {
-        await this.env.DB.prepare(
-          `UPDATE users SET rate = ?, ${isPlayerWinner ? "wins = wins + 1, " : ""}matches = matches + 1 WHERE id = ?`
-        ).bind(newRate, player.id).run();
-      } catch (e) {
-        console.error("Error updating CPU match rate:", e);
-      }
+      await this.env.DB.prepare(
+        `UPDATE users SET rate = ?, ${isPlayerWinner ? "wins = wins + 1, " : ""}matches = matches + 1 WHERE id = ?`,
+      )
+        .bind(newRate, player.id)
+        .run();
 
-      return {
-        [player.id]: { old: currentRate, new: newRate, diff }
-      };
+      return { [player.id]: { old: currentRate, new: newRate, diff } };
     }
 
-    // PvP Match
     const rw = await getRate(winner.id);
     const rl = await getRate(loser.id);
     const K = 32;
-
     const ew = 1 / (1 + Math.pow(10, (rl - rw) / 400));
     const el = 1 / (1 + Math.pow(10, (rw - rl) / 400));
-
     const newRw = Math.round(rw + K * (1 - ew));
-    const newRl = Math.round(rl + K * (0 - el));
+    const newRl = Math.max(0, Math.round(rl - K * el));
 
-    try {
-      await this.env.DB.batch([
-        this.env.DB.prepare("UPDATE users SET rate = ?, wins = wins + 1, matches = matches + 1 WHERE id = ?").bind(newRw, winner.id),
-        this.env.DB.prepare("UPDATE users SET rate = ?, matches = matches + 1 WHERE id = ?").bind(newRl, loser.id)
-      ]);
-    } catch (e) {
-      console.error("Error updating PvP match rates:", e);
-    }
+    await this.env.DB.batch([
+      this.env.DB.prepare("UPDATE users SET rate = ?, wins = wins + 1, matches = matches + 1 WHERE id = ?").bind(newRw, winner.id),
+      this.env.DB.prepare("UPDATE users SET rate = ?, matches = matches + 1 WHERE id = ?").bind(newRl, loser.id),
+    ]);
 
     return {
       [winner.id]: { old: rw, new: newRw, diff: newRw - rw },
-      [loser.id]: { old: rl, new: newRl, diff: newRl - rl }
+      [loser.id]: { old: rl, new: newRl, diff: newRl - rl },
     };
   }
 
-  // --- CPU Logic ---
-  async triggerCpuAction(delay = 1500) {
-    // 思考時間を演出
+  async triggerCpuAction(delay = 900) {
     setTimeout(async () => {
       if (this.state.phase !== "playing" || this.state.turnPlayerId !== "CPU") return;
-
-      const cpu = this.state.players.find(p => p.isCpu);
-      const opponent = this.state.players.find(p => !p.isCpu);
+      const cpu = this.state.players.find((p) => p.isCpu);
+      const opponent = this.state.players.find((p) => !p.isCpu);
       if (!cpu || !opponent) return;
 
-      // 1. 攻撃するかStayするか
-      // ドローしたカードがある場合、Stayも選択肢。
-      // ここではシンプルに「必ず攻撃する」戦略をとる。
-      // ただし、既に攻撃を外した後（changeTurnされるのでここには来ないはずだが）や
-      // 連続攻撃のチャンスの時は考える。
+      const choices = opponent.hand
+        .filter((card) => !card.isOpen)
+        .map((card) => ({
+          card,
+          guesses: getAllowedGuesses({
+            attackerHand: cpu.hand,
+            drawnCard: this.state.drawnCard,
+            opponentHand: opponent.hand,
+            targetCardId: card.id,
+            failedGuesses: this.failedGuesses[card.id] || [],
+          }),
+        }))
+        .filter((choice) => choice.guesses.length > 0)
+        .sort((a, b) => a.guesses.length - b.guesses.length);
 
-      // ターゲット選定
-      // 相手の伏せカードを探す
-      const hiddenIndices = opponent.hand
-        .map((c, i) => ({ c, i }))
-        .filter(item => !item.c.isOpen);
-
-      if (hiddenIndices.length === 0) return; // 全て開いている（勝利確定のはず）
-
-      // 推論ロジック
-      // 自分の手札 + 自分のドローカード + 相手のオープンカード + 自分の過去の失敗(記憶していないが)
-      // から、あり得ない数字を除外する。
-      
-      const visibleNumbers = new Set<number>();
-      // 自分の手札
-      cpu.hand.forEach(c => visibleNumbers.add(c.number));
-      // ドローカード
-      if (this.state.drawnCard && (this.state.drawnCard.isOpen || this.state.turnPlayerId === "CPU")) {
-        visibleNumbers.add(this.state.drawnCard.number);
-      }
-      // 相手のオープンカード
-      opponent.hand.forEach(c => {
-        if (c.isOpen) visibleNumbers.add(c.number);
-      });
-
-      // ターゲット決定（ランダム）
-      const target = hiddenIndices[Math.floor(Math.random() * hiddenIndices.length)];
-      
-      // 数字決定
-      // 0-11 の中で visibleNumbers にないもの
-      const candidates = [];
-      for(let i=0; i<12; i++) {
-        if (!visibleNumbers.has(i)) candidates.push(i);
-      }
-
-      // さらに、相手のカードの並び順から推測（簡易版）
-      // 左側は小さい、右側は大きい。
-      // target.i が小さいほど小さい数字の可能性が高い。
-      // 今回は完全ランダムで実装。
-      const guess = candidates.length > 0 
-        ? candidates[Math.floor(Math.random() * candidates.length)]
-        : 0;
-
-      await this.handleAttack("CPU", target.i, guess);
-
+      if (choices.length === 0) return;
+      const smallest = choices[0].guesses.length;
+      const bestChoices = choices.filter((choice) => choice.guesses.length === smallest);
+      const target = bestChoices[Math.floor(Math.random() * bestChoices.length)];
+      const guess = target.guesses[Math.floor(Math.random() * target.guesses.length)];
+      await this.handleAttack("CPU", target.card.id, guess);
     }, delay);
   }
 
   async webSocketClose(ws: WebSocket) {
     const pid = this.sessions.get(ws);
-    if (pid) {
-      this.sessions.delete(ws);
-      // 切断時の処理
-      // プレイ中なら相手の勝ち
-      if (this.state.phase === "playing") {
-        const opponent = this.state.players.find(p => p.id !== pid);
-        if (opponent) {
-           await this.finishGame(opponent.id);
-        } else {
-           // 両方いなくなった?
-           this.state.phase = "finished";
-        }
-      }
-      
-      // プレイヤーリストから削除（再接続を考慮しない場合）
-      this.state.players = this.state.players.filter((p) => p.id !== pid);
-      if (this.state.players.length === 0) {
-        this.state.phase = "waiting";
-        this.state.deck = [];
-        this.state.ratingUpdates = null;
-      }
+    if (!pid) return;
+    this.sessions.delete(ws);
+
+    if (this.hasLiveSession(pid)) return;
+
+    const player = this.state.players.find((p) => p.id === pid);
+    if (!player || player.isCpu) return;
+
+    this.disconnectDeadlines[pid] = Date.now() + RECONNECT_GRACE_MS;
+    await this.persist();
+    await this.scheduleDisconnectAlarm();
+  }
+
+  async alarm() {
+    const now = Date.now();
+    const expired = Object.entries(this.disconnectDeadlines)
+      .filter(([, deadline]) => deadline <= now)
+      .map(([playerId]) => playerId);
+
+    const disconnectedHumans = this.state.players.filter(
+      (player) => !player.isCpu && !this.hasLiveSession(player.id),
+    );
+    if (
+      this.state.phase === "playing" &&
+      disconnectedHumans.length === 2 &&
+      disconnectedHumans.every(
+        (player) => (this.disconnectDeadlines[player.id] ?? Infinity) <= now,
+      )
+    ) {
+      await this.resetRoom();
+      return;
     }
+
+    for (const playerId of expired) {
+      delete this.disconnectDeadlines[playerId];
+      if (this.hasLiveSession(playerId)) continue;
+
+      const player = this.state.players.find((p) => p.id === playerId);
+      if (!player) continue;
+
+      if (this.state.phase === "playing") {
+        const opponent = this.state.players.find((p) => p.id !== playerId);
+        if (opponent) await this.finishGame(opponent.id);
+      }
+
+      this.state.players = this.state.players.filter((p) => p.id !== playerId);
+    }
+
+    if (this.state.players.length === 0) {
+      await this.resetRoom();
+      return;
+    }
+
+    await this.persist();
+    await this.scheduleDisconnectAlarm();
+    this.broadcastState();
   }
 }

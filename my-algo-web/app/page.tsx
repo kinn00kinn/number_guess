@@ -10,13 +10,12 @@ import { useGame } from "@/hooks/useGame";
 import GameHeader from "@/components/GameHeader";
 import Lobby from "@/components/Lobby";
 import GameBoard from "@/components/GameBoard";
-import TurnOverlay from "@/components/TurnOverlay"; // ★ 追加
-import TutorialModal from "@/components/TutorialModal"; // ★ 追加
+import TurnOverlay from "@/components/TurnOverlay";
+import TutorialModal from "@/components/TutorialModal";
 import {
   ResultModal,
   GuessModal,
   HistoryModal,
-  // HelpModal, // ← 廃止 (TutorialModalに置き換え)
   RankingModal,
   NameEditModal,
 } from "@/components/Modals";
@@ -24,7 +23,7 @@ import {
 export default function Home() {
   const [lang, setLang] = useState<Lang>("ja");
   const [showHistoryModal, setShowHistoryModal] = useState(false);
-  const [showTutorial, setShowTutorial] = useState(false); // ★ Help -> Tutorial に変更
+  const [showTutorial, setShowTutorial] = useState(false);
   const [showRanking, setShowRanking] = useState(false);
   const [showNameEdit, setShowNameEdit] = useState(false);
 
@@ -38,9 +37,7 @@ export default function Home() {
     const doFetchUser = async () => {
       setIsUserLoading(true);
       try {
-        const res = await fetch(`${API_URL}/auth/me`, {
-          credentials: "include",
-        });
+        const res = await fetch(`${API_URL}/auth/me`, { credentials: "include" });
         setUser(res.ok ? await res.json() : null);
       } catch (error) {
         console.error("Failed to fetch user:", error);
@@ -53,7 +50,6 @@ export default function Home() {
   }, [fetchUserTrigger]);
 
   const fetchRanking = useCallback(() => {
-    // ★ ここにも cache: "no-store" を推奨
     fetch(`${API_URL}/ranking`, { cache: "no-store" })
       .then((res) => res.json())
       .then(setRanking)
@@ -86,12 +82,9 @@ export default function Home() {
     setUser(null);
     window.location.reload();
   };
-  // ... (ここまで変更なし) ...
 
   const t = TRANSLATIONS[lang];
   const game = useGame(lang, user);
-
-  // 分割代入
   const {
     roomId,
     setRoomId,
@@ -113,38 +106,32 @@ export default function Home() {
     guessModalClosingRef,
   } = game;
 
-  // レート更新確認
   useEffect(() => {
     if (gameState?.phase === "finished") {
-      setTimeout(() => {
-        refetchUser();
-      }, 1000);
+      const timer = setTimeout(() => refetchUser(), 1000);
+      return () => clearTimeout(timer);
     }
   }, [gameState?.phase]);
 
   const isMyTurn = gameState?.turnPlayerId === gameState?.me.id;
 
   const handleCardClick = useCallback(
-    (index: number) => {
+    (cardId: string) => {
       if (!gameState || guessModalClosingRef.current) return;
-      const card = gameState.opponentHand[index];
-      if (isMyTurn && !card.isOpen && !isProcessing && isConnected) {
-        setGuessModal({ show: true, targetIndex: index });
+      const card = gameState.opponentHand.find((item) => item.id === cardId);
+      if (card && isMyTurn && !card.isOpen && !isProcessing && isConnected) {
+        setGuessModal({ show: true, targetCardId: cardId });
       }
     },
-    [
-      gameState,
-      guessModalClosingRef,
-      isMyTurn,
-      isProcessing,
-      isConnected,
-      setGuessModal,
-    ]
+    [gameState, guessModalClosingRef, isMyTurn, isProcessing, isConnected, setGuessModal]
+  );
+
+  const selectedTarget = gameState?.opponentHand.find(
+    (card) => card.id === guessModal.targetCardId
   );
 
   return (
     <div className="min-h-screen bg-slate-50 text-slate-800 font-sans pb-safe selection:bg-slate-200">
-      {/* ★ ターン開始時のカットイン演出 */}
       {joined && gameState && <TurnOverlay isMyTurn={isMyTurn} lang={lang} />}
 
       {joined && !isConnected && (
@@ -162,7 +149,6 @@ export default function Home() {
           roomId={roomId}
           gameLogs={gameLogs}
           onShowHistory={() => setShowHistoryModal(true)}
-          // ★ Helpボタンを押すとチュートリアルが開くように変更
           onShowHelp={() => setShowTutorial(true)}
           user={user}
           onShowRanking={() => {
@@ -197,13 +183,13 @@ export default function Home() {
                 isMyTurn={isMyTurn}
                 isProcessing={isProcessing}
                 isConnected={isConnected}
-                isReconnecting={game.isReconnecting} // 追加
+                isReconnecting={game.isReconnecting}
                 hasMoved={hasMoved}
                 gameLogs={gameLogs}
                 lastAttack={lastAttack}
                 onStay={handleStay}
-                toasts={game.toasts} // 追加
-                removeToast={game.removeToast} // 追加
+                toasts={game.toasts}
+                removeToast={game.removeToast}
                 onCardClick={handleCardClick}
               />
             </>
@@ -211,13 +197,13 @@ export default function Home() {
         )}
       </div>
 
-      {/* --- モーダル群 --- */}
       {guessModal.show && (
         <GuessModal
           lang={lang}
           isProcessing={isProcessing}
           isConnected={isConnected}
-          onClose={() => setGuessModal({ show: false, targetIndex: -1 })}
+          allowedGuesses={selectedTarget?.allowedGuesses}
+          onClose={() => setGuessModal({ show: false, targetCardId: null })}
           onAttack={handleAttack}
         />
       )}
@@ -230,7 +216,6 @@ export default function Home() {
         />
       )}
 
-      {/* ★ HelpModalの代わりにTutorialModalを表示 */}
       {showTutorial && (
         <TutorialModal lang={lang} onClose={() => setShowTutorial(false)} />
       )}

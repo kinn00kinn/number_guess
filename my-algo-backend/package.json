@@ -4,7 +4,9 @@
   "scripts": {
     "dev": "wrangler dev",
     "deploy": "wrangler deploy --minify",
-    "cf-typegen": "wrangler types --env-interface CloudflareBindings"
+    "cf-typegen": "wrangler types --env-interface CloudflareBindings",
+    "test": "node --test src/gameLogic.test.mjs",
+    "build": "wrangler deploy --dry-run --outdir dist"
   },
   "dependencies": {
     "@hono/oauth-providers": "^0.8.5",

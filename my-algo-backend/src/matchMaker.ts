@@ -1,10 +1,5 @@
 import { DurableObject } from "cloudflare:workers";
 
-export interface MatchRequest {
-  userId: string;
-  rate: number;
-}
-
 interface QueuedPlayer {
   ws: WebSocket;
   userId: string;
@@ -12,50 +7,94 @@ interface QueuedPlayer {
   joinedAt: number;
 }
 
+type MatchAttachment = {
+  kind: "match-queue";
+  userId: string;
+  rate: number;
+  joinedAt: number;
+};
+
+type Bindings = {
+  ALGO_ROOM: DurableObjectNamespace;
+};
+
 export class MatchMaker extends DurableObject {
   queue: QueuedPlayer[] = [];
+  env: Bindings;
 
-  constructor(ctx: DurableObjectState, env: any) {
+  constructor(ctx: DurableObjectState, env: Bindings) {
     super(ctx, env);
+    this.env = env;
+
+    for (const ws of this.ctx.getWebSockets()) {
+      try {
+        const attachment = ws.deserializeAttachment() as MatchAttachment | null;
+        if (attachment?.kind === "match-queue") {
+          this.queue.push({
+            ws,
+            userId: attachment.userId,
+            rate: attachment.rate,
+            joinedAt: attachment.joinedAt,
+          });
+        }
+      } catch {
+        // Ignore stale sockets created before queue attachments existed.
+      }
+    }
+  }
+
+  private async configureRoom(
+    roomId: string,
+    config: { ranked: boolean; cpu: boolean; allowedPlayerIds: string[] },
+  ) {
+    const room = this.env.ALGO_ROOM.get(this.env.ALGO_ROOM.idFromName(roomId));
+    const response = await room.fetch("https://room.internal/configure", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(config),
+    });
+    if (!response.ok) throw new Error(`Failed to configure room: ${response.status}`);
   }
 
   async fetch(request: Request): Promise<Response> {
     const upgradeHeader = request.headers.get("Upgrade");
-    if (!upgradeHeader || upgradeHeader !== "websocket") {
+    if (!upgradeHeader || upgradeHeader.toLowerCase() !== "websocket") {
       return new Response("Expected Upgrade: websocket", { status: 426 });
     }
 
     const url = new URL(request.url);
     const userId = url.searchParams.get("userId");
-    const rate = parseInt(url.searchParams.get("rate") || "1500");
+    const parsedRate = Number.parseInt(url.searchParams.get("rate") || "1500", 10);
+    const rate = Number.isFinite(parsedRate) ? parsedRate : 1500;
+    if (!userId) return new Response("Missing userId", { status: 400 });
 
-    if (!userId) {
-      return new Response("Missing userId", { status: 400 });
+    for (const existing of this.queue.filter((p) => p.userId === userId)) {
+      try {
+        existing.ws.close(1000, "Replaced by newer matchmaking session");
+      } catch {}
     }
+    this.queue = this.queue.filter((p) => p.userId !== userId);
 
     const { 0: client, 1: server } = new WebSocketPair();
+    const joinedAt = Date.now();
     this.ctx.acceptWebSocket(server);
-
-    // 接続と同時にキューに追加
-    const player: QueuedPlayer = {
-      ws: server,
+    server.serializeAttachment({
+      kind: "match-queue",
       userId,
       rate,
-      joinedAt: Date.now(),
-    };
-    this.queue.push(player);
+      joinedAt,
+    } satisfies MatchAttachment);
+    this.queue.push({ ws: server, userId, rate, joinedAt });
 
-    const currentAlarm = await this.ctx.storage.getAlarm();
-    if (currentAlarm === null) {
+    if ((await this.ctx.storage.getAlarm()) === null) {
       await this.ctx.storage.setAlarm(Date.now() + 1000);
     }
 
     return new Response(null, { status: 101, webSocket: client });
   }
 
-  async webSocketMessage(ws: WebSocket, message: string | ArrayBuffer) {
-    // クライアントからのメッセージは基本無視でOK（PING/PONGくらい？）
-    // JOIN_QUEUEはfetchで処理済み
+  async webSocketMessage(_ws: WebSocket, _message: string | ArrayBuffer) {
+    // Matching is server-driven; client messages are intentionally ignored.
   }
 
   async webSocketClose(ws: WebSocket) {
@@ -63,77 +102,68 @@ export class MatchMaker extends DurableObject {
   }
 
   async alarm() {
-    // 接続切れのプレイヤーを削除
-    this.queue = this.queue.filter(p => {
-      try {
-        // readyStateチェック (Durable ObjectのWebSocketは標準と少し違うが、sendでエラーが出たら削除でも良い)
-        // ここでは安全のため、明らかに切断されているものを除外したいが、
-        // DOのWebSocketは自動でcloseイベントが来るので、webSocketCloseで処理されているはず。
-        // 念のため、生存確認は送信時に行う。
-        return true;
-      } catch {
-        return false;
-      }
-    });
-
-    // レート順にソート（近いレートの人と当たりやすくする）
     this.queue.sort((a, b) => a.rate - b.rate);
 
     let i = 0;
     while (i < this.queue.length - 1) {
       const p1 = this.queue[i];
-      const p2 = this.queue[i+1];
+      const p2 = this.queue[i + 1];
 
-      // 自分自身とはマッチングしない
       if (p1.userId === p2.userId) {
         i++;
         continue;
       }
 
-      // レート差のチェック（オプション：例えば差が500以内ならマッチングなど）
-      // 今回はシンプルに隣り合う人とマッチングさせる
-      
-      // マッチング成立
       const roomId = crypto.randomUUID();
       try {
-        p1.ws.send(JSON.stringify({ type: "MATCH_FOUND", roomId, opponentRate: p2.rate }));
-        p2.ws.send(JSON.stringify({ type: "MATCH_FOUND", roomId, opponentRate: p1.rate }));
-        p1.ws.close();
-        p2.ws.close();
-      } catch (e) {
-        // 送信エラーならそのプレイヤーを削除してリトライすべきだが、
-        // 次のアラームで処理されるか、webSocketCloseで消えるのを待つ
+        await this.configureRoom(roomId, {
+          ranked: true,
+          cpu: false,
+          allowedPlayerIds: [p1.userId, p2.userId],
+        });
+        p1.ws.send(
+          JSON.stringify({ type: "MATCH_FOUND", roomId, opponentRate: p2.rate }),
+        );
+        p2.ws.send(
+          JSON.stringify({ type: "MATCH_FOUND", roomId, opponentRate: p1.rate }),
+        );
+        p1.ws.close(1000, "Match found");
+        p2.ws.close(1000, "Match found");
+        this.queue.splice(i, 2);
+      } catch (error) {
+        console.error("Failed to create ranked room", error);
+        i += 2;
       }
-
-      // マッチングした2人をキューから削除
-      this.queue.splice(i, 2);
-      // インデックスは進めなくて良い（削除されたので次のペアがiに来る）
     }
 
-    // CPU対戦へのフォールバック
     const now = Date.now();
-    const timeout = 10000; // 10秒待機
-
-    // 待機時間が長いプレイヤーを探す
-    // queueはレート順にソートされてしまったので、joinedAtを見る必要がある
-    // 削除操作が入るので、後ろからループするか、filterを使う
+    const timeout = 10_000;
     const remainingQueue: QueuedPlayer[] = [];
-    
-    for (const p of this.queue) {
-      if (now - p.joinedAt > timeout) {
-        // タイムアウト -> CPU戦
-        const roomId = crypto.randomUUID();
-        try {
-          p.ws.send(JSON.stringify({ type: "MATCH_FOUND", roomId, mode: "cpu" }));
-          p.ws.close();
-        } catch (e) {}
-      } else {
-        remainingQueue.push(p);
+
+    for (const player of this.queue) {
+      if (now - player.joinedAt <= timeout) {
+        remainingQueue.push(player);
+        continue;
+      }
+
+      const roomId = crypto.randomUUID();
+      try {
+        await this.configureRoom(roomId, {
+          ranked: true,
+          cpu: true,
+          allowedPlayerIds: [player.userId],
+        });
+        player.ws.send(
+          JSON.stringify({ type: "MATCH_FOUND", roomId, mode: "cpu" }),
+        );
+        player.ws.close(1000, "CPU fallback");
+      } catch (error) {
+        console.error("Failed to create CPU ranked room", error);
+        remainingQueue.push(player);
       }
     }
-    this.queue = remainingQueue;
 
-    // まだキューに残っているなら、再度アラームをセット
+    this.queue = remainingQueue;
     if (this.queue.length > 0) {
       await this.ctx.storage.setAlarm(Date.now() + 1000);
     }

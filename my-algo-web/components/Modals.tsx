@@ -198,12 +198,14 @@ export function GuessModal({
   onAttack,
   isProcessing,
   isConnected,
+  allowedGuesses,
 }: {
   lang: Lang;
   onClose: () => void;
   onAttack: (n: number) => void;
   isProcessing: boolean;
   isConnected: boolean;
+  allowedGuesses?: number[];
 }) {
   const t = TRANSLATIONS[lang];
   const isDisabled = isProcessing || !isConnected;
@@ -231,23 +233,36 @@ export function GuessModal({
         </div>
 
         <div className="grid grid-cols-4 gap-3 mb-6">
-          {[...Array(12)].map((_, num) => (
-            <button
-              key={num}
-              onClick={() => onAttack(num)}
-              disabled={isDisabled}
-              className={`
-                aspect-square rounded-xl text-xl font-black transition-all flex items-center justify-center border-b-4 active:border-b-0 active:translate-y-1
-                ${
-                  isDisabled
-                    ? "bg-slate-100 text-slate-300 border-slate-200 cursor-not-allowed"
-                    : "bg-white text-slate-800 border-slate-200 hover:bg-slate-50 hover:border-slate-300 hover:text-slate-900 shadow-sm"
+          {[...Array(12)].map((_, num) => {
+            const isAllowed =
+              allowedGuesses === undefined || allowedGuesses.includes(num);
+            const disabled = isDisabled || !isAllowed;
+            return (
+              <button
+                key={num}
+                onClick={() => onAttack(num)}
+                disabled={disabled}
+                aria-disabled={disabled}
+                title={
+                  !isAllowed
+                    ? lang === "ja"
+                      ? "公開情報と矛盾するため選択できません"
+                      : "Impossible from the public information"
+                    : undefined
                 }
-              `}
-            >
-              {num}
-            </button>
-          ))}
+                className={`
+                  aspect-square rounded-xl text-xl font-black transition-all flex items-center justify-center border-b-4 active:border-b-0 active:translate-y-1
+                  ${
+                    disabled
+                      ? "bg-slate-100 text-slate-300 border-slate-200 cursor-not-allowed"
+                      : "bg-white text-slate-800 border-slate-200 hover:bg-slate-50 hover:border-slate-300 hover:text-slate-900 shadow-sm"
+                  }
+                `}
+              >
+                {num}
+              </button>
+            );
+          })}
         </div>
 
         <button

@@ -18,7 +18,7 @@ test('candidate bounds honor nearest open cards and target color', () => {
     card('white', 99, false, 'target'),
     card('white', 7, true, 'right'),
   ];
-  const allowed = getAllowedGuesses({ attackerHand: [], drawnCard: null, opponentHand: opponent, targetCardId: 'target', failedGuesses: [] });
+  const allowed = getAllowedGuesses({ attackerHand: [], drawnCard: null, opponentHand: opponent, targetCardId: 'target', failedGuessesByCard: {} });
   assert.deepEqual(allowed, [3, 4, 5, 6]);
 });
 
@@ -29,7 +29,7 @@ test('own black 5 does not eliminate white 5', () => {
     drawnCard: null,
     opponentHand: opponent,
     targetCardId: 'target',
-    failedGuesses: [],
+    failedGuessesByCard: {},
   });
   assert.ok(allowed.includes(5));
 });
@@ -41,23 +41,23 @@ test('own white 5 eliminates white 5', () => {
     drawnCard: null,
     opponentHand: opponent,
     targetCardId: 'target',
-    failedGuesses: [],
+    failedGuessesByCard: {},
   });
   assert.ok(!allowed.includes(5));
 });
 
 test('failed guess is excluded only for target knowledge', () => {
   const opponent = [card('black', 99, false, 'a'), card('white', 99, false, 'b')];
-  const a = getAllowedGuesses({ attackerHand: [], drawnCard: null, opponentHand: opponent, targetCardId: 'a', failedGuesses: [4] });
-  const b = getAllowedGuesses({ attackerHand: [], drawnCard: null, opponentHand: opponent, targetCardId: 'b', failedGuesses: [] });
+  const a = getAllowedGuesses({ attackerHand: [], drawnCard: null, opponentHand: opponent, targetCardId: 'a', failedGuessesByCard: { a: [4] } });
+  const b = getAllowedGuesses({ attackerHand: [], drawnCard: null, opponentHand: opponent, targetCardId: 'b', failedGuessesByCard: {} });
   assert.ok(!a.includes(4));
   assert.ok(b.includes(4));
 });
 
 test('open or unknown target cannot be attacked', () => {
   const opponent = [card('black', 2, true, 'open')];
-  assert.deepEqual(getAllowedGuesses({ attackerHand: [], drawnCard: null, opponentHand: opponent, targetCardId: 'open', failedGuesses: [] }), []);
-  assert.deepEqual(getAllowedGuesses({ attackerHand: [], drawnCard: null, opponentHand: opponent, targetCardId: 'missing', failedGuesses: [] }), []);
+  assert.deepEqual(getAllowedGuesses({ attackerHand: [], drawnCard: null, opponentHand: opponent, targetCardId: 'open', failedGuessesByCard: {} }), []);
+  assert.deepEqual(getAllowedGuesses({ attackerHand: [], drawnCard: null, opponentHand: opponent, targetCardId: 'missing', failedGuessesByCard: {} }), []);
 });
 
 test('guess and guest ID validation reject malformed input', () => {
@@ -80,4 +80,19 @@ test('client-safe views never expose hidden opponent numbers or hands', () => {
   const players = buildPublicPlayers([{ id: 'p1', name: 'A', isCpu: false, hand: [card('black', 11, false, 'secret')] }]);
   assert.deepEqual(players[0].hand, []);
   assert.equal(JSON.stringify(players).includes('secret'), false);
+});
+
+
+test('candidate filtering rejects values that cannot fit the whole sorted hand', () => {
+  const opponent = [
+    card('white', 99, false, 'target'),
+    card('white', 99, false, 'b'),
+    card('white', 99, false, 'c'),
+    card('white', 99, false, 'd'),
+  ];
+  const allowed = getAllowedGuesses({
+    attackerHand: [], drawnCard: null, opponentHand: opponent,
+    targetCardId: 'target', failedGuessesByCard: {},
+  });
+  assert.deepEqual(allowed, [0,1,2,3,4,5,6,7,8]);
 });

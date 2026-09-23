@@ -4,6 +4,7 @@
     "module": "esnext",
     "moduleResolution": "bundler",
     "strict": true,
+    "allowJs": true,
     "skipLibCheck": true,
     "lib": ["esnext"],
     "types": ["@cloudflare/workers-types"], // ★ これが重要です

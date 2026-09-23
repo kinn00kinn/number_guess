@@ -77,13 +77,13 @@ export class MatchMaker extends DurableObject {
 
     const { 0: client, 1: server } = new WebSocketPair();
     const joinedAt = Date.now();
+    this.ctx.acceptWebSocket(server);
     server.serializeAttachment({
       kind: "match-queue",
       userId,
       rate,
       joinedAt,
     } satisfies MatchAttachment);
-    this.ctx.acceptWebSocket(server);
     this.queue.push({ ws: server, userId, rate, joinedAt });
 
     if ((await this.ctx.storage.getAlarm()) === null) {

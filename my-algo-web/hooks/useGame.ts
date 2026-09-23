@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect, useCallback, useReducer } from "react";
-import { GameState, Card, LogItem, Lang, User } from "@/types";
+import { GameState, LogItem, Lang, User } from "@/types";
 import { WS_URL, TRANSLATIONS } from "@/utils/constant";
 import { useToast } from "@/components/Toast";
 import { playSe, vibrate } from "@/utils/effects";
@@ -401,7 +401,7 @@ export function useGame(lang: Lang, user: User | null) {
       const success = sendMessage({ type: "ATTACK", targetCardId, guess });
       if (!success) stopProcessing();
     },
-    [sendMessage, addLog, t]
+    [sendMessage]
   );
 
   const handleStay = useCallback(() => {

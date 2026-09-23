@@ -1,5 +1,5 @@
 import { DurableObject } from "cloudflare:workers";
-import { getAllowedGuesses, isValidGuestId, isValidGuessValue, sortCards } from "./gameLogic.js";
+import { buildOpponentHandView, buildPublicPlayers, getAllowedGuesses, isValidGuestId, isValidGuessValue, sortCards } from "./gameLogic.js";
 
 type CardColor = "black" | "white";
 
@@ -205,23 +205,15 @@ export class AlgoRoom extends DurableObject {
       const opponentData = this.state.players.find((p) => p.id !== playerId);
       if (!myData) return;
 
-      const opponentHandMasked =
-        opponentData?.hand.map((card) => ({
-          color: card.color,
-          number: card.isOpen ? card.number : null,
-          isOpen: card.isOpen,
-          id: card.id,
-          allowedGuesses: card.isOpen
-            ? []
-            : getAllowedGuesses({
-                attackerHand: myData.hand,
-                drawnCard:
-                  this.state.turnPlayerId === playerId ? this.state.drawnCard : null,
-                opponentHand: opponentData.hand,
-                targetCardId: card.id,
-                failedGuesses: this.failedGuesses[card.id] || [],
-              }),
-        })) || [];
+      const opponentHandMasked = opponentData
+        ? buildOpponentHandView({
+            attackerHand: myData.hand,
+            drawnCard:
+              this.state.turnPlayerId === playerId ? this.state.drawnCard : null,
+            opponentHand: opponentData.hand,
+            failedGuesses: this.failedGuesses,
+          })
+        : [];
 
       let drawnCardMasked = null;
       if (this.state.drawnCard) {
@@ -240,12 +232,7 @@ export class AlgoRoom extends DurableObject {
         phase: this.state.phase,
         turnPlayerId: this.state.turnPlayerId,
         me: myData,
-        players: this.state.players.map((p) => ({
-          id: p.id,
-          name: p.name,
-          hand: [],
-          isCpu: p.isCpu,
-        })),
+        players: buildPublicPlayers(this.state.players),
         opponentHand: opponentHandMasked,
         drawnCard: drawnCardMasked,
         winner: this.state.winner,

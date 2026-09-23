@@ -13,16 +13,28 @@ export function sortCards(hand) {
   return hand;
 }
 
+function canAssignSortedRanks(rankOptions, targetIndex, targetRank) {
+  let previous = -1;
+  for (let i = 0; i < rankOptions.length; i++) {
+    const options = i === targetIndex ? [targetRank] : rankOptions[i];
+    const next = options.find((rank) => rank > previous);
+    if (next === undefined) return false;
+    previous = next;
+  }
+  return true;
+}
+
 /**
- * Compute guesses that are logically possible from the attacker's public knowledge.
- * Hidden opponent values are intentionally not used.
+ * Compute guesses logically possible from public information only.
+ * It accounts for colors, known/owned cards, failed guesses, and whether the
+ * entire sorted opponent hand can still be assigned consistently.
  *
  * @param {{
  *   attackerHand:Array<{color:'black'|'white',number:number,isOpen:boolean,id:string}>,
  *   drawnCard:{color:'black'|'white',number:number,isOpen:boolean,id:string}|null,
  *   opponentHand:Array<{color:'black'|'white',number:number,isOpen:boolean,id:string}>,
  *   targetCardId:string,
- *   failedGuesses:number[]
+ *   failedGuessesByCard:Record<string,number[]>
  * }} args
  */
 export function getAllowedGuesses({
@@ -30,13 +42,10 @@ export function getAllowedGuesses({
   drawnCard,
   opponentHand,
   targetCardId,
-  failedGuesses = [],
+  failedGuessesByCard = {},
 }) {
   const targetIndex = opponentHand.findIndex((card) => card.id === targetCardId);
-  if (targetIndex < 0) return [];
-
-  const target = opponentHand[targetIndex];
-  if (target.isOpen) return [];
+  if (targetIndex < 0 || opponentHand[targetIndex].isOpen) return [];
 
   const occupiedRanks = new Set();
   for (const card of attackerHand) occupiedRanks.add(cardRank(card));
@@ -45,31 +54,25 @@ export function getAllowedGuesses({
     if (card.isOpen) occupiedRanks.add(cardRank(card));
   }
 
-  let leftBound = null;
-  for (let i = targetIndex - 1; i >= 0; i--) {
-    if (opponentHand[i].isOpen) {
-      leftBound = cardRank(opponentHand[i]);
-      break;
+  const rankOptions = opponentHand.map((card) => {
+    if (card.isOpen) return [cardRank(card)];
+    const failed = new Set(failedGuessesByCard[card.id] || []);
+    const options = [];
+    for (let number = 0; number <= 11; number++) {
+      if (failed.has(number)) continue;
+      const rank = cardRank({ color: card.color, number });
+      if (!occupiedRanks.has(rank)) options.push(rank);
     }
-  }
+    return options;
+  });
 
-  let rightBound = null;
-  for (let i = targetIndex + 1; i < opponentHand.length; i++) {
-    if (opponentHand[i].isOpen) {
-      rightBound = cardRank(opponentHand[i]);
-      break;
-    }
-  }
-
-  const failed = new Set(failedGuesses);
+  const target = opponentHand[targetIndex];
   const allowed = [];
   for (let number = 0; number <= 11; number++) {
-    if (failed.has(number)) continue;
+    if ((failedGuessesByCard[target.id] || []).includes(number)) continue;
     const rank = cardRank({ color: target.color, number });
     if (occupiedRanks.has(rank)) continue;
-    if (leftBound !== null && rank <= leftBound) continue;
-    if (rightBound !== null && rank >= rightBound) continue;
-    allowed.push(number);
+    if (canAssignSortedRanks(rankOptions, targetIndex, rank)) allowed.push(number);
   }
   return allowed;
 }
@@ -101,7 +104,7 @@ export function buildOpponentHandView({ attackerHand, drawnCard, opponentHand, f
           drawnCard,
           opponentHand,
           targetCardId: card.id,
-          failedGuesses: failedGuesses[card.id] || [],
+          failedGuessesByCard: failedGuesses,
         }),
   }));
 }

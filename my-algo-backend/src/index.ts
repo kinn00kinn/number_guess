@@ -19,75 +19,79 @@ type Bindings = {
 
 const app = new Hono<{ Bindings: Bindings }>();
 
-// CORS設定の修正
 app.use("/*", async (c, next) => {
+  const normalizeOrigin = (value: string | undefined) => value?.replace(/\/$/, "");
+  const configuredFrontend = normalizeOrigin(c.env.FRONTEND_URL);
+
   const corsMiddleware = cors({
     origin: (origin) => {
-      // 許可するオリジンのリスト
-      const allowedOrigins = [
-        c.env.FRONTEND_URL, // 環境変数 (https://binarily.kinn-kinn.com)
+      const normalized = normalizeOrigin(origin);
+      const allowedOrigins = new Set([
+        configuredFrontend,
         "http://localhost:3000",
         "http://localhost:5173",
         "https://binarily.kinn-kinn.com",
-      ];
+        "https://my-algo-web.pages.dev",
+      ].filter(Boolean));
 
-      // 末尾のスラッシュ有無の揺れを吸収するため、部分一致や正規化を検討しても良いが
-      // ここでは完全一致またはリストに含まれるかで判定
-      if (allowedOrigins.includes(origin)) {
-        return origin;
-      }
-      // 環境変数が読み込めていない場合などのフォールバック
-      if (origin && origin.endsWith(".pages.dev")) {
-        return origin;
-      }
-      return origin; // 開発中は便宜上すべて許可する場合 (本番では厳密にすべき)
+      if (normalized && allowedOrigins.has(normalized)) return origin;
+      if (normalized?.endsWith(".my-algo-web.pages.dev")) return origin;
+      return "";
     },
-    allowHeaders: ["Content-Type", "Upgrade", "Authorization", "Cookie"], // Cookieを追加
+    allowHeaders: ["Content-Type", "Authorization"],
     allowMethods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
     credentials: true,
   });
   return corsMiddleware(c, next);
 });
 
-// Auth Routes
 app.route("/auth", authApp);
 app.put("/user/name", updateName);
 app.get("/ranking", getRanking);
 
-// Game Routes
-app.get("/game/new", (c) => {
-  const roomId = Math.floor(1000 + Math.random() * 9000).toString();
-  return c.text(roomId);
+app.get("/game/new", async (c) => {
+  for (let attempt = 0; attempt < 32; attempt++) {
+    const random = new Uint32Array(1);
+    crypto.getRandomValues(random);
+    const roomId = (1000 + (random[0] % 9000)).toString();
+    const stub = c.env.ALGO_ROOM.get(c.env.ALGO_ROOM.idFromName(roomId));
+    const reserved = await stub.fetch("https://room.internal/reserve", {
+      method: "POST",
+    });
+    if (reserved.ok) return c.text(roomId);
+  }
+  return c.json({ error: "No room ID available. Please retry." }, 503);
 });
 
 app.get("/game/:id", async (c) => {
   const id = c.req.param("id");
-  const stubId = c.env.ALGO_ROOM.idFromName(id);
-  const stub = c.env.ALGO_ROOM.get(stubId);
-  return stub.fetch(c.req.raw);
+  const stub = c.env.ALGO_ROOM.get(c.env.ALGO_ROOM.idFromName(id));
+  const headers = new Headers(c.req.raw.headers);
+  const userId = getCookie(c, COOKIE_NAME);
+  if (userId) headers.set("x-binarily-user-id", userId);
+  else headers.delete("x-binarily-user-id");
+
+  const forwarded = new Request(c.req.url, {
+    method: c.req.method,
+    headers,
+  });
+  return stub.fetch(forwarded);
 });
 
-// Matchmaking Route
 app.get("/match/random", async (c) => {
   const userId = getCookie(c, COOKIE_NAME);
-  if (!userId) {
-    return c.json({ error: "Unauthorized" }, 401);
-  }
+  if (!userId) return c.json({ error: "Unauthorized" }, 401);
 
   const user = await c.env.DB.prepare("SELECT rate FROM users WHERE id = ?")
     .bind(userId)
-    .first<any>();
-  const rate = user?.rate || 1500;
+    .first<{ rate: number }>();
+  const rate = user?.rate ?? 1500;
 
-  const stubId = c.env.MATCH_MAKER.idFromName("global");
-  const stub = c.env.MATCH_MAKER.get(stubId);
-
+  const stub = c.env.MATCH_MAKER.get(c.env.MATCH_MAKER.idFromName("global"));
   const url = new URL(c.req.url);
   url.searchParams.set("userId", userId);
   url.searchParams.set("rate", rate.toString());
-
-  const newReq = new Request(url.toString(), c.req.raw);
-  return stub.fetch(newReq);
+  return stub.fetch(new Request(url.toString(), c.req.raw));
 });
 
 app.get("/debug", (c) => {

@@ -161,7 +161,7 @@ export default function TutorialPage() {
   });
 
   const [toasts, setToasts] = useState<ToastItem[]>([]);
-  const [guessModal, setGuessModal] = useState({ show: false, targetIndex: -1 });
+  const [guessModal, setGuessModal] = useState<{ show: boolean; targetCardId: string | null }>({ show: false, targetCardId: null });
   const [hasMoved, setHasMoved] = useState(false);
 
   const currentStep = STEPS[stepIndex];
@@ -198,12 +198,12 @@ export default function TutorialPage() {
 
   // --- Handlers ---
 
-  const handleCardClick = (index: number) => {
+  const handleCardClick = (cardId: string) => {
     if (currentStep.expectedAction !== "click_card") return;
 
+    const index = gameState.opponentHand.findIndex((card) => card.id === cardId);
     if (index === currentStep.targetCardIndex) {
-      // Correct card clicked
-      setGuessModal({ show: true, targetIndex: index });
+      setGuessModal({ show: true, targetCardId: cardId });
       nextStep();
     } else {
       addToast("そのカードではありません。指示に従ってください。", "error");
@@ -215,7 +215,7 @@ export default function TutorialPage() {
 
     if (guess === currentStep.targetGuess) {
       // Correct guess
-      setGuessModal({ show: false, targetIndex: -1 });
+      setGuessModal({ show: false, targetCardId: null });
       
       // Reveal card
       setGameState((prev) => {
@@ -355,7 +355,7 @@ export default function TutorialPage() {
           isProcessing={false}
           isConnected={true}
           onClose={() => {
-            setGuessModal({ show: false, targetIndex: -1 });
+            setGuessModal({ show: false, targetCardId: null });
             if (currentStep.id === "guess") setStepIndex((prev) => prev - 1);
           }}
           onAttack={handleAttack}

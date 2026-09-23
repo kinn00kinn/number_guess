@@ -384,7 +384,7 @@ export class AlgoRoom extends DurableObject {
       drawnCard: this.state.drawnCard,
       opponentHand: opponent.hand,
       targetCardId,
-      failedGuesses: this.failedGuesses[targetCardId] || [],
+      failedGuessesByCard: this.failedGuesses,
     });
     if (!allowedGuesses.includes(guessedNumber)) {
       try {
@@ -597,7 +597,7 @@ export class AlgoRoom extends DurableObject {
             drawnCard: this.state.drawnCard,
             opponentHand: opponent.hand,
             targetCardId: card.id,
-            failedGuesses: this.failedGuesses[card.id] || [],
+            failedGuessesByCard: this.failedGuesses,
           }),
         }))
         .filter((choice) => choice.guesses.length > 0)

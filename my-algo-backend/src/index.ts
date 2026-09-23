@@ -19,25 +19,33 @@ type Bindings = {
 
 const app = new Hono<{ Bindings: Bindings }>();
 
+const normalizeOrigin = (value: string | undefined) => value?.replace(/\/$/, "");
+
+const isAllowedBrowserOrigin = (
+  configuredFrontend: string | undefined,
+  origin: string | undefined,
+) => {
+  if (!origin) return true;
+  const normalized = normalizeOrigin(origin);
+  const allowedOrigins = new Set(
+    [
+      normalizeOrigin(configuredFrontend),
+      "http://localhost:3000",
+      "http://localhost:5173",
+      "https://binarily.kinn-kinn.com",
+      "https://my-algo-web.pages.dev",
+    ].filter(Boolean),
+  );
+  return (
+    (!!normalized && allowedOrigins.has(normalized)) ||
+    !!normalized?.endsWith(".my-algo-web.pages.dev")
+  );
+};
+
 app.use("/*", async (c, next) => {
-  const normalizeOrigin = (value: string | undefined) => value?.replace(/\/$/, "");
-  const configuredFrontend = normalizeOrigin(c.env.FRONTEND_URL);
-
   const corsMiddleware = cors({
-    origin: (origin) => {
-      const normalized = normalizeOrigin(origin);
-      const allowedOrigins = new Set([
-        configuredFrontend,
-        "http://localhost:3000",
-        "http://localhost:5173",
-        "https://binarily.kinn-kinn.com",
-        "https://my-algo-web.pages.dev",
-      ].filter(Boolean));
-
-      if (normalized && allowedOrigins.has(normalized)) return origin;
-      if (normalized?.endsWith(".my-algo-web.pages.dev")) return origin;
-      return "";
-    },
+    origin: (origin) =>
+      isAllowedBrowserOrigin(c.env.FRONTEND_URL, origin) ? origin : "",
     allowHeaders: ["Content-Type", "Authorization"],
     allowMethods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
     credentials: true,
@@ -64,6 +72,9 @@ app.get("/game/new", async (c) => {
 });
 
 app.get("/game/:id", async (c) => {
+  if (!isAllowedBrowserOrigin(c.env.FRONTEND_URL, c.req.header("Origin"))) {
+    return c.json({ error: "Origin not allowed" }, 403);
+  }
   const id = c.req.param("id");
   const stub = c.env.ALGO_ROOM.get(c.env.ALGO_ROOM.idFromName(id));
   const headers = new Headers(c.req.raw.headers);
@@ -79,6 +90,9 @@ app.get("/game/:id", async (c) => {
 });
 
 app.get("/match/random", async (c) => {
+  if (!isAllowedBrowserOrigin(c.env.FRONTEND_URL, c.req.header("Origin"))) {
+    return c.json({ error: "Origin not allowed" }, 403);
+  }
   const userId = getCookie(c, COOKIE_NAME);
   if (!userId) return c.json({ error: "Unauthorized" }, 401);
 

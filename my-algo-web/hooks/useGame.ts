@@ -205,7 +205,26 @@ export function useGame(lang: Lang, user: User | null) {
             const myId = current?.me.id;
             const isMe = data.attackerId === myId;
 
-            if (!isMe) {
+            if (isMe) {
+              dispatch({
+                type: "SET_LAST_ATTACK",
+                payload: {
+                  targetCardId: data.targetCardId,
+                  guess: data.guess,
+                  isYourCard: false,
+                },
+              });
+              const index = current?.opponentHand.findIndex(
+                (card) => card.id === data.targetCardId
+              );
+              addLog(
+                t.logAttacked
+                  .replace("{i}", index !== undefined && index >= 0 ? `${index + 1}` : "?")
+                  .replace("{n}", `${data.guess}`),
+                "attack"
+              );
+              playSe("attack");
+            } else {
               vibrate([50, 50, 50]);
               playSe("defense");
               dispatch({
@@ -379,26 +398,8 @@ export function useGame(lang: Lang, user: User | null) {
       setTimeout(() => (guessModalClosingRef.current = false), 500);
 
       startProcessing();
-      dispatch({
-        type: "SET_LAST_ATTACK",
-        payload: { targetCardId, guess, isYourCard: false },
-      });
-
       const success = sendMessage({ type: "ATTACK", targetCardId, guess });
-      if (success) {
-        const index = stateRef.current.gameState?.opponentHand.findIndex(
-          (card) => card.id === targetCardId
-        );
-        addLog(
-          t.logAttacked
-            .replace("{i}", index !== undefined && index >= 0 ? `${index + 1}` : "?")
-            .replace("{n}", `${guess}`),
-          "attack"
-        );
-        playSe("attack");
-      } else {
-        stopProcessing();
-      }
+      if (!success) stopProcessing();
     },
     [sendMessage, addLog, t]
   );
